@@ -1,0 +1,9 @@
+.env
+pandas-ai/
+pandas_ai
+dev
+__pychache__/
+__pycache__
+exports/
+pandasai.log
+*.ipynb
