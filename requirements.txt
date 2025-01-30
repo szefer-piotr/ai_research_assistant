@@ -1,7 +1,2 @@
-pandasai
-numpy==1.26.3
-pyyaml
-polars
-google-generativeai
-streamlit
 python-dotenv
+langchain
