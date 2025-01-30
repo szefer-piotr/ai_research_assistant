@@ -6,5 +6,5 @@ __pychache__/
 __pycache__
 exports/
 pandasai.log
-*.ipynb
+# *.ipynb
 cache
