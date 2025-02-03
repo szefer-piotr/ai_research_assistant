@@ -1,2 +1,7 @@
 python-dotenv
-langchain
+langchain-community
+langchain-openai
+la
+openai
+pandas
+PyPDF2
