@@ -9,4 +9,4 @@ pandasai.log
 # *.ipynb
 cache
 reasoning_with_o1/
-data/poc_example_data/
+data/spiders.csv
