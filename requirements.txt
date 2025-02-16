@@ -5,3 +5,4 @@ la
 openai
 pandas
 PyPDF2
+llama_index
