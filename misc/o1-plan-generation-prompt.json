@@ -1,0 +1,175 @@
+{
+    "role": [
+        "You are an expert in research and statistical analysis of ecological data with proficiency in R.",
+        "Students will consult you for assistance in data analysis, interpretation, and statistical methods, especially given their limited statistical knowledge.",
+        "Your role is to provide guidance, suggestions, and recommendations within your expertise."
+    ],
+    "policy":[
+        "Focus only on the specific paper or analysis provided.",
+        "First, check the attached PDF for a suitable analysis.",
+        "Decline questions outside your scope and remind students of the topics you cover."
+    ],
+    "instructions": {
+      "task": "Look at provided hypotheses and example methodology.",
+      "requirements": [
+        "Prepare a plan of statistical analyses that will test the provided hypotheses.",
+        "These hypotheses will be tested on a new dataset provided in the form of a data summary.",
+        "Provide all necessary datasets and variable names from the analyses.",
+        "Provide the response in a form of a plan, consisting of simple and programmatically executable, numbered steps.",
+        "Steps have to be detailed.",
+        "For planning the analyses, use dataset names and variable names from the data summary.",
+        "Return only the plan steps without any additional commentary.",
+        "Use ALL necessary column names for the planned analyses.",
+        "Return the response in an XML format."
+      ]
+    },
+    "hypotheses": [
+      "Which local and landscape factors (at different spatial scales) influence species richness, abundance, community structure, and taxonomic and functional diversity (at the level of alpha and beta diversity) of wild bee assemblages in parks within urban and rural landscapes?",
+      "How does the level of urbanization, measured by impervious surface area and population density, affect wild bee assemblages in parks?",
+      "How do the traits of wild bees found in parks in urban and rural landscapes relate to local and landscape factors?",
+      "What is the relative contribution of alpha and beta diversity at different spatial scales to regional gamma diversity, and is beta diversity between landscapes mainly the result of species turnover or nestedness?",
+      "We hypothesized that bee diversity and abundance would be higher in rural areas than in urban landscapes.",
+      "We hypothesized that bee assemblages in more urbanized areas would be dominated by smaller bees with more ecologically generalized traits (e.g., polylectic and eusocial) compared to rural areas, which are likely to host bee communities with more specialized traits (e.g., oligolectic).",
+      "We hypothesized that bee abundance and diversity would respond negatively to an increase in impervious surface area and positively to an increase in floral resources."
+    ],
+    "example_methodology": {
+      "sampling": [
+        "All analyses were performed using pooled data obtained by both sampling techniques (i.e., pan traps and aerial netting).",
+        "Statistical analyses were conducted using R version 4.1.1."
+      ],
+      "species_accumulation": [
+        "Individual-based bee species accumulation curves were generated to examine sampling effort.",
+        "Accumulation curves were calculated with the iNEXT package.",
+        "84% confidence intervals were used to determine statistical significance with an error rate of 0.05.",
+        "The Chao1 estimator was used to estimate true species diversity."
+      ],
+      "spatial_autocorrelation": [
+        "Moran’s I test was performed for abundance and species richness values normalized by log transformation.",
+        "Spatial autocorrelation was evaluated."
+      ],
+      "glmm_analysis": [
+        "Two sets of analyses using GLMMs were conducted.",
+        "Month of collection and site identity were taken as random factors.",
+        "Differences in wild bee abundance and species richness were analyzed between habitat types.",
+        "The effect of local and landscape factors (e.g., habitat area, isolation, syntaxonomic heterogeneity, landscape heterogeneity) was tested.",
+        "Variance Inflation Factor (VIF) values were kept below 5 to reduce multicollinearity."
+      ],
+      "generalized_additive_mixed_models": [
+        "GAMMs were used to compare temporal patterns in wild bee abundance, species richness, and food plant cover.",
+        "Site identity was used as a random factor.",
+        "Abundance was log-transformed prior to the analysis.",
+        "Temporal changes were simulated using the gratia R library."
+      ],
+      "rda_analysis": [
+        "Redundancy analysis (RDA) was conducted using selected local and landscape variables and habitat type as predictors.",
+        "A Hellinger transformation was applied to species data.",
+        "Environmental variables were scaled and centered before analysis.",
+        "A Monte Carlo permutation test with 999 repeats was used to assess significance."
+      ],
+      "fourth_corner_analysis": [
+        "A fourth-corner analysis was conducted to explore relationships between bee functional traits and environmental variables.",
+        "Multivariate generalized linear fourth-corner models were fitted using the mvabund library.",
+        "LASSO penalty was used for variable selection.",
+        "Model deviance was estimated using Monte Carlo resampling with 1000 resamples."
+      ],
+      "functional_diversity": [
+        "Four functional diversity indices (FEve, FDis, RaoQ, FDiv) were computed using the FD package.",
+        "GLMMs were used to compare diversity indices between habitat types.",
+        "Beta distribution with a logit link function was applied for bounded diversity indices."
+      ]
+    },
+    "dataset_summary": {
+      "datasets": [
+        {
+          "name": "distance_matrix.csv",
+          "description": "Distance matrix of distances between 22 studied sites."
+        },
+        {
+          "name": "parki_dataset_full_encoded.csv",
+          "description": "Main dataset with insect collections.",
+          "variables": [
+            {
+              "column_name": "INDEX_OF_INDIVIDUALS",
+              "type": "continuous",
+              "median": 2882,
+              "min": 1,
+              "max": 5763,
+              "description": "Count of individual bees recorded."
+            },
+            {
+              "column_name": "Bee.species",
+              "type": "categorical",
+              "unique_values": 188,
+              "description": "Bee species names."
+            },
+            {
+              "column_name": "Species.code",
+              "type": "categorical",
+              "unique_values": 188,
+              "description": "Code corresponding to each bee species."
+            },
+            {
+              "column_name": "Site.number",
+              "type": "categorical",
+              "unique_values": 22,
+              "description": "Identifier for sampling sites."
+            },
+            {
+              "column_name": "Year",
+              "type": "continuous",
+              "median": 2019,
+              "min": 2018,
+              "max": 2019,
+              "description": "Year of observation."
+            },
+            {
+              "column_name": "Landscape.type",
+              "type": "categorical",
+              "unique_values": 2,
+              "description": "Urban vs. rural classification."
+            },
+            {
+              "column_name": "Coverage.of.bee.food.plant.species.[%]",
+              "type": "continuous",
+              "median": 40,
+              "min": 17,
+              "max": 65,
+              "description": "Percentage coverage of bee food plants."
+            },
+            {
+              "column_name": "Impervious.surface.area.in.buffer.250.m.[mean]",
+              "type": "continuous",
+              "median": 23.83,
+              "min": 0.51,
+              "max": 81.18,
+              "description": "Impervious surface percentage at 250m buffer."
+            },
+            {
+              "column_name": "Population.density.in.buffer.250.m",
+              "type": "continuous",
+              "median": 681.80,
+              "min": 8.52,
+              "max": 3089.27,
+              "description": "Population density at 250m buffer."
+            },
+            {
+              "column_name": "Grasslands.in.buffer.250.m.[%]",
+              "type": "continuous",
+              "median": 15.32,
+              "min": 4.71,
+              "max": 53.45,
+              "description": "Grassland coverage at 250m buffer."
+            },
+            {
+              "column_name": "Trees.and.shrubs.in.buffer.250.m.[%]",
+              "type": "continuous",
+              "median": 4.29,
+              "min": 0.15,
+              "max": 39.77,
+              "description": "Tree and shrub cover at 250m buffer."
+            }
+          ]
+        }
+      ]
+    }
+  }
