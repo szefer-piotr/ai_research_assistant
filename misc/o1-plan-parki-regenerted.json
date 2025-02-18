@@ -1,0 +1,274 @@
+{
+  "plan": [
+    {
+      "step": 1,
+      "description": "Load required libraries and datasets",
+      "substeps": [
+        {
+          "step": "1.1",
+          "description": "Load R packages: tidyverse, vegan, lme4, mgcv, FD, mvabund, iNEXT, ade4, gratia, betapart"
+        },
+        {
+          "step": "1.2",
+          "description": "Load 'parki_dataset_full_encoded.csv' into a dataframe named 'bee_data'"
+        },
+        {
+          "step": "1.3",
+          "description": "Load 'distance_matrix.csv' into a matrix named 'distance_matrix'"
+        },
+        {
+          "step": "1.4",
+          "description": "Inspect 'bee_data' and 'distance_matrix' for missing values and handle them appropriately"
+        }
+      ]
+    },
+    {
+      "step": 2,
+      "description": "Prepare and transform data",
+      "substeps": [
+        {
+          "step": "2.1",
+          "description": "Convert 'Year', 'Site.number', 'Bee.species', and 'Landscape.type' to factors in 'bee_data'"
+        },
+        {
+          "step": "2.2",
+          "description": "Calculate species richness and abundance for each 'Site.number'"
+        },
+        {
+          "step": "2.2.1",
+          "description": "Calculate species richness as the count of unique 'Bee.species' per 'Site.number'"
+        },
+        {
+          "step": "2.2.2",
+          "description": "Calculate abundance as the sum of 'INDEX_OF_INDIVIDUALS' per 'Site.number'"
+        },
+        {
+          "step": "2.3",
+          "description": "Merge species richness and abundance back into 'bee_data'"
+        },
+        {
+          "step": "2.4",
+          "description": "Log-transform 'Abundance' if necessary for normality"
+        }
+      ]
+    },
+    {
+      "step": 3,
+      "description": "Generate species accumulation curves",
+      "substeps": [
+        {
+          "step": "3.1",
+          "description": "Use the iNEXT package to create individual-based species accumulation curves from 'bee_data'"
+        },
+        {
+          "step": "3.2",
+          "description": "Calculate the Chao1 estimator for species diversity using 'Bee.species' data"
+        },
+        {
+          "step": "3.3",
+          "description": "Plot species accumulation curves with 84% confidence intervals"
+        }
+      ]
+    },
+    {
+      "step": 4,
+      "description": "Evaluate spatial autocorrelation",
+      "substeps": [
+        {
+          "step": "4.1",
+          "description": "Calculate Moran's I for 'Abundance' and 'Species richness' using 'distance_matrix'"
+        },
+        {
+          "step": "4.2",
+          "description": "Assess significance of spatial autocorrelation for each variable"
+        }
+      ]
+    },
+    {
+      "step": 5,
+      "description": "Analyze differences between urban and rural landscapes",
+      "substeps": [
+        {
+          "step": "5.1",
+          "description": "Fit GLMMs with 'Abundance' and 'Species richness' as response variables"
+        },
+        {
+          "step": "5.1.1",
+          "description": "Use 'Landscape.type' as a fixed effect"
+        },
+        {
+          "step": "5.1.2",
+          "description": "Include 'Site.number' and 'Year' as random effects"
+        },
+        {
+          "step": "5.1.3",
+          "description": "Check model assumptions and goodness-of-fit"
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "description": "Test effects of local and landscape factors",
+      "substeps": [
+        {
+          "step": "6.1",
+          "description": "Select predictor variables"
+        },
+        {
+          "step": "6.1.1",
+          "description": "Local factors: 'Coverage.of.bee.food.plant.species.[%]'"
+        },
+        {
+          "step": "6.1.2",
+          "description": "Landscape factors: 'Impervious.surface.area.in.buffer.250.m.[mean]', 'Population.density.in.buffer.250.m', 'Grasslands.in.buffer.250.m.[%]', 'Trees.and.shrubs.in.buffer.250.m.[%]'"
+        },
+        {
+          "step": "6.2",
+          "description": "Check multicollinearity among predictors using Variance Inflation Factor (VIF)"
+        },
+        {
+          "step": "6.3",
+          "description": "Remove or combine variables with VIF values above 5 to reduce multicollinearity"
+        },
+        {
+          "step": "6.4",
+          "description": "Fit GLMMs with 'Abundance' and 'Species richness' as response variables and selected predictors as fixed effects"
+        },
+        {
+          "step": "6.4.1",
+          "description": "Include 'Site.number' and 'Year' as random effects"
+        },
+        {
+          "step": "6.4.2",
+          "description": "Check model assumptions and goodness-of-fit"
+        }
+      ]
+    },
+    {
+      "step": 7,
+      "description": "Analyze temporal patterns using GAMMs",
+      "substeps": [
+        {
+          "step": "7.1",
+          "description": "Fit GAMMs with 'Abundance' and 'Species richness' as response variables"
+        },
+        {
+          "step": "7.1.1",
+          "description": "Include smooth terms for temporal variables if available"
+        },
+        {
+          "step": "7.1.2",
+          "description": "Use 'Site.number' as a random effect"
+        },
+        {
+          "step": "7.2",
+          "description": "Visualize temporal changes using the 'gratia' package"
+        }
+      ]
+    },
+    {
+      "step": 8,
+      "description": "Conduct redundancy analysis (RDA)",
+      "substeps": [
+        {
+          "step": "8.1",
+          "description": "Prepare species data matrix with 'Bee.species' abundance per 'Site.number'"
+        },
+        {
+          "step": "8.2",
+          "description": "Apply Hellinger transformation to species data matrix"
+        },
+        {
+          "step": "8.3",
+          "description": "Scale and center environmental variables from 'bee_data'"
+        },
+        {
+          "step": "8.4",
+          "description": "Perform RDA with environmental variables as predictors and transformed species data as response"
+        },
+        {
+          "step": "8.5",
+          "description": "Perform Monte Carlo permutation test with 999 permutations to assess significance"
+        }
+      ]
+    },
+    {
+      "step": 9,
+      "description": "Conduct fourth-corner analysis",
+      "substeps": [
+        {
+          "step": "9.1",
+          "description": "Compile functional traits data for 'Bee.species'"
+        },
+        {
+          "step": "9.2",
+          "description": "Prepare environmental variables matrix from 'bee_data'"
+        },
+        {
+          "step": "9.3",
+          "description": "Use 'mvabund' package to fit multivariate generalized linear fourth-corner models"
+        },
+        {
+          "step": "9.4",
+          "description": "Apply LASSO penalty for variable selection"
+        },
+        {
+          "step": "9.5",
+          "description": "Estimate model deviance using Monte Carlo resampling with 1000 resamples"
+        }
+      ]
+    },
+    {
+      "step": 10,
+      "description": "Calculate functional diversity indices",
+      "substeps": [
+        {
+          "step": "10.1",
+          "description": "Compute indices: 'FEve', 'FDis', 'RaoQ', 'FDiv' using the 'FD' package"
+        },
+        {
+          "step": "10.2",
+          "description": "Fit GLMMs to compare functional diversity indices between 'Landscape.type'"
+        },
+        {
+          "step": "10.2.1",
+          "description": "Use functional diversity indices as response variables"
+        },
+        {
+          "step": "10.2.2",
+          "description": "Include 'Landscape.type' as a fixed effect"
+        },
+        {
+          "step": "10.2.3",
+          "description": "Include 'Site.number' and 'Year' as random effects"
+        },
+        {
+          "step": "10.2.4",
+          "description": "Apply beta distribution with logit link function if indices are bounded between 0 and 1"
+        }
+      ]
+    },
+    {
+      "step": 11,
+      "description": "Partition beta diversity into turnover and nestedness components",
+      "substeps": [
+        {
+          "step": "11.1",
+          "description": "Use 'betapart' package to calculate beta diversity indices between sites using 'Bee.species' data"
+        },
+        {
+          "step": "11.2",
+          "description": "Partition beta diversity into species turnover and nestedness-resultant components"
+        },
+        {
+          "step": "11.3",
+          "description": "Compare beta diversity components between urban and rural 'Landscape.type'"
+        },
+        {
+          "step": "11.4",
+          "description": "Assess the contribution of alpha and beta diversity to regional gamma diversity"
+        }
+      ]
+    }
+  ]
+}
