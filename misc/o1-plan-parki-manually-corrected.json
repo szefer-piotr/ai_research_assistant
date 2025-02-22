@@ -1,0 +1,227 @@
+{"policy": [
+  "For each generated step provide input and output names of created dataset, columns, with descriptions.",
+  "Provide description of each step."
+],
+    "analysis_plan": {
+      "steps": [
+        {
+          "step_number": 1,
+          "description": "Import all necessary libraries: vegan, betapart, FD, mvabund, lme4, MASS, glmmTMB. Load the two datasets.",
+          "datasets": [
+            "parki_dataset_full_encoded.csv",
+            "distance_matrix.csv"
+          ]
+        },
+        {
+          "step_number": 2,
+          "description": "Create a site-level summary table for each sampling period.",
+          "calculations": {
+            "grouping": ["Site.number", "Year", "Month"],
+            "metrics": {
+              "SiteAbundance": "Number of rows in parki_dataset_full_encoded.csv",
+              "SiteRichness": "unique count of Bee.species or Species.code"
+            }
+          }
+        },
+        {
+          "step_number": 3,
+          "description": "Test for spatial autocorrelation of SiteAbundance and SiteRichness.",
+          "methods": [
+            "Create a distnace matrix based on site to site distances in distance_matrix.csv",
+            "Substitute NA's for 0's in the distance matrix.",
+            "Perform Moran’s I or similar tests."
+          ]
+        },
+        {
+          "step_number": 4,
+          "description": [
+            "Design a way to reduce the dimensionality of the predictor variables for teh GLMM or GAMM models which evaluate how abundance and species richness respond to local and landscape factors.",
+            "Solve the problem of too many explanatory variables vs too few observations.",
+            "Propose a method to perform a model selection to keep the best model."],
+          "methods": [
+            "Use PCA to reduce the dimensionality of the predictor variables within each of the buffer zones (250m, 500m, 750m, 1000m, 1500m).",
+            "Design a method to evaluate the importance of each principal component. For example, backward model selection or forward model selection but you can be creative."
+          ],
+          "fixed_predictors":[
+            "Landscape.type",
+            "Coverage.of.bee.food.plant.species....",
+            "Floral.richness",
+            "Alien.floral.richness....",
+            "Native.floral.richness....",
+            "Spontaneous.floral.richness....",
+            "Ornamental.floral.richness....",
+            "Age..years.",
+            "Area.size..m2.",
+            "Bare.ground....",
+            "Perimeter.area.ratio",
+            "Isolation..100.m.buffer.",
+            "Distance.to.the.city.centre..m.",
+            "Trees.and.shrubs.in.buffer.250.m....",
+            "Grasslands.in.buffer.250.m....",
+            "Trees.and.shrubs.in.bufffer.500.m....",
+            "Grasslands.in.bufffer.500.m....",
+            "Trees.and.shrubs.in.bufffer.750.m....",
+            "Grasslands.in.bufffer.750.m....",
+            "Trees.and.shrubs.in.bufffer.1000.m....",
+            "Grasslands.in.bufffer.1000.m....",
+            "Trees.and.shrubs.in.bufffer.1500.m....",
+            "Grasslands.in.bufffer.1500.m....",
+            "Landscape.diversity.in.buffer.250.m",
+            "Landscape.diversity.in.buffer.500.m",
+            "Landscape.diversity.in.buffer.750.m",
+            "Landscape.diversity.in.buffer.1000.m",
+            "Landscape.diversity.in.buffer.1500.m",
+            "Impervious.surface.area.in.buffer.250.m..mean.",
+            "Impervious.surface.area.in.buffer.500.m..mean.",
+            "Impervious.surface.area.in.buffer.750.m..mean.",
+            "Impervious.surface.area.in.buffer.1000.m..mean.",
+            "Impervious.surface.area.in.buffer.1500.m..mean.",
+            "Population.density.in.buffer.250.m",
+            "Population.density.in.buffer.500.m",
+            "Population.density.in.buffer.750.m",
+            "Population.density.in.buffer.1000.m",
+            "Population.density.in.buffer.1500.m"
+          ]
+        },
+        {
+          "step_number": 4.0,
+          "description": "Perform a deimensional reduction of the predictor variables.",
+          "methods": [
+            "Use PCA to reduce the dimensionality of the predictor variables within each of the buffer zones (250m, 500m, 750m, 1000m, 1500m).",
+            "Use the first 5-10 principal components as predictors in subsequent models."
+          ]
+        },
+        {
+          "step_number": 4.1,
+          "description": [
+            "Fit GLMM or GAMM models to evaluate how abundance and species richness respond to local and landscape factors.",
+            "For each buffer, reduce multicollinearity by replacing sets of correlated predictors with a smaller number of principal components.",
+            "Include both the reduced (PC) predictors and key fixed predictors a priori deemed important.",
+            "Use stepwise selection (forward or backward), penalized regression, and cross-validation to arrive at the best-supported model that avoids overfitting."
+          ],
+          "response_variables": {
+            "SiteAbundance": ["negative binomial (if overdispersed)", "logarithm of SiteAbundance"],
+            "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+          },
+          "fixed_predictors":[
+            "Landscape.type",
+            "Coverage.of.bee.food.plant.species....",
+            "Floral.richness",
+            "Alien.floral.richness....",
+            "Native.floral.richness....",
+            "Spontaneous.floral.richness....",
+            "Ornamental.floral.richness....",
+            "Age..years.",
+            "Area.size..m2.",
+            "Bare.ground....",
+            "Perimeter.area.ratio",
+            "Isolation..100.m.buffer."
+          ],
+          "random_effects": ["Site.number, but consider also a model without it", "Month"]
+        },
+        {
+          "step_number": 4.2,
+          "description": [
+            "Fit GLMM and GAMM models to evaluate how abundance and species richness respond to the landscape type.",
+            "Add other fixed predictors that are a priori deemed important: Floral richness, Alien floral richness, Native floral richness, Spontaneous floral richness, Ornamental floral richness, Age (years), Area size (m2), Bare ground, Perimeter area ratio, Isolation (100 m buffer).",
+            "Then include both the reduced ('PC_all_1', 'PC_all_2') predictors and test for the model improvement.",
+            "Use stepwise selection (forward), penalized regression, and cross-validation to arrive at the best-supported model that avoids overfitting."
+          ],
+          "response_variables": {
+            "SiteAbundance": ["negative binomial (if overdispersed)", "logarithm of SiteAbundance"],
+            "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+          },
+          "fixed_predictors":[
+            "Landscape.type",
+            "Coverage.of.bee.food.plant.species....",
+            "Floral.richness",
+            "Alien.floral.richness....",
+            "Native.floral.richness....",
+            "Spontaneous.floral.richness....",
+            "Ornamental.floral.richness....",
+            "Age..years.",
+            "Area.size..m2.",
+            "Bare.ground....",
+            "Perimeter.area.ratio",
+            "Isolation..100.m.buffer."
+          ],
+          "random_effects": ["Site.number, but consider also a model without it", "Month"]
+        },
+        {
+          "step_number": 4.3,
+          "description": [
+            "Fit GAMM models to evaluate how abundance and species richness respond to the Month, and wether responses are different between landscape types.",
+            "Add other fixed predictors that are a priori deemed important: Floral richness, Alien floral richness, Native floral richness, Spontaneous floral richness, Ornamental floral richness, Age (years), Area size (m2), Bare ground, Perimeter area ratio, Isolation (100 m buffer).",
+            "Then include both the reduced (PC) predictors and test for the model improvement.",
+            "Use stepwise selection (forward), penalized regression, and cross-validation to arrive at the best-supported model that avoids overfitting."
+          ],
+          "response_variables": {
+            "SiteAbundance": ["negative binomial (if overdispersed)", "logarithm of SiteAbundance"],
+            "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+          },
+          "fixed_predictors":[
+            "Landscape.type",
+            "Coverage.of.bee.food.plant.species....",
+            "Floral.richness",
+            "Alien.floral.richness....",
+            "Native.floral.richness....",
+            "Spontaneous.floral.richness....",
+            "Ornamental.floral.richness....",
+            "Age..years.",
+            "Area.size..m2.",
+            "Bare.ground....",
+            "Perimeter.area.ratio",
+            "Isolation..100.m.buffer."
+          ],
+          "random_effects": ["Site.number, but consider also a model without it", "Month"]
+        },
+        {
+          "step_number": 5,
+          "description": "Perform multivariate analysis of community composition with RDA.",
+          "steps": [
+            "Aggregate counts of each Bee.species by Site.number (optionally by Year or Month).",
+            "Apply a Hellinger transformation to the community matrix.",
+            "Use scaled predictor variables from Step 4.",
+            "Conduct permutation tests for significance."
+          ]
+        },
+        {
+          "step_number": 6,
+          "description": "Examine relationships between bee functional traits and local/landscape predictors using a fourth-corner or trait-based model.",
+          "steps": [
+            "Aggregate Bee.species or Species.code by Site.number.",
+            "Use trait columns: Social.behavior, Nesting.place, Floral.specificity, Flight.beginning.period, End.of.flight.period, Lifespan.[month], Voltinism, Pollen.carrying-structure, Mean.body.size, Rarity.",
+            "Fit a multivariate generalized linear fourth-corner model using traitglm with a negative binomial distribution."
+          ]
+        },
+        {
+          "step_number": 7,
+          "description": "Calculate taxonomic and functional alpha diversity metrics.",
+          "methods": [
+            "Use Bee.species or Species.code to compute alpha diversity.",
+            "Use dbFD in the FD package to calculate FEve, FDis, RaoQ, and FDiv from trait data.",
+            "Fit GLMM or GAMM models to test diversity metrics against local/landscape predictors."
+          ]
+        },
+        {
+          "step_number": 8,
+          "description": "Partition total regional diversity (gamma) into alpha and beta components using betapart or vegan.",
+          "steps": [
+            "Use presence/absence or abundance data aggregated by Site.number.",
+            "Decompose beta diversity into turnover vs. nestedness components.",
+            "Assess differences between urban and rural landscapes."
+          ]
+        },
+        {
+          "step_number": 9,
+          "description": "Summarize all statistical findings to test hypotheses.",
+          "hypothesis_tests": [
+            "Compare rural and urban sites for abundance, richness, and community composition.",
+            "Relate local and landscape variables to wild bee alpha and beta diversity.",
+            "Identify functional traits associated with urban sites.",
+            "Evaluate the relative importance of turnover vs. nestedness in beta diversity."
+          ]
+        }
+      ]
+    }
+  }
