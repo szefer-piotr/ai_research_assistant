@@ -1,0 +1,367 @@
+{
+    {
+    "step_number": 4,
+    "description": "Model selection to test difference in fixed predictor values between urban and rural sites (Landscape.type).",
+    "inputs": ["parki_dataset_full_encoded.csv"],
+    "response_variables": ["SiteAbundance", "SiteRichness"],
+    "fixed_predictors":[
+        "Landscape.type",
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer.",
+        "Distance.to.the.city.centre..m.",
+        "Trees.and.shrubs.in.buffer.250.m....",
+        "Grasslands.in.buffer.250.m....",
+        "Trees.and.shrubs.in.bufffer.500.m....",
+        "Grasslands.in.bufffer.500.m....",
+        "Trees.and.shrubs.in.bufffer.750.m....",
+        "Grasslands.in.bufffer.750.m....",
+        "Trees.and.shrubs.in.bufffer.1000.m....",
+        "Grasslands.in.bufffer.1000.m....",
+        "Trees.and.shrubs.in.bufffer.1500.m....",
+        "Grasslands.in.bufffer.1500.m....",
+        "Landscape.diversity.in.buffer.250.m",
+        "Landscape.diversity.in.buffer.500.m",
+        "Landscape.diversity.in.buffer.750.m",
+        "Landscape.diversity.in.buffer.1000.m",
+        "Landscape.diversity.in.buffer.1500.m",
+        "Impervious.surface.area.in.buffer.250.m..mean.",
+        "Impervious.surface.area.in.buffer.500.m..mean.",
+        "Impervious.surface.area.in.buffer.750.m..mean.",
+        "Impervious.surface.area.in.buffer.1000.m..mean.",
+        "Impervious.surface.area.in.buffer.1500.m..mean.",
+        "Population.density.in.buffer.250.m",
+        "Population.density.in.buffer.500.m",
+        "Population.density.in.buffer.750.m",
+        "Population.density.in.buffer.1000.m",
+        "Population.density.in.buffer.1500.m"
+    ],
+    "requirements": [
+        "Landscape.type is a categorical variable with two levels: urban and rural",
+        "Landscape.type should be present in every model as a fixed predictor"
+    ],
+    "step0":{
+        "title": "Prepare the data for the analysis",
+        "description": "Aggregate abundnace counts by Site.number. and Month.",
+        "methods": [
+        "Use SiteAbundance and SiteRichness as response variables.",
+        "SiteAbundance is a number of rows n()",
+        "SiteRichness are a number of unique bee codes",
+        "Rest of the colums should return unique value in grouping."
+        ]
+    },
+    "step1": {
+        "title": "Penalized (Regularized) Regression for GLMMs",
+        "description": "Penalized regression methods (e.g., LASSO, Ridge, Elastic Net) can be extended to mixed models to perform variable selection or coefficient shrinkage. The penalty term helps control model complexity by shrinking regression coefficients—some all the way to zero in the LASSO case.",
+        "subsections": {
+        "1.1": {
+            "title": "glmmLasso",
+            "package": "glmmLasso",
+            "approach": "Implements a LASSO penalty on the fixed effects in a GLMM.",
+            "notes": "You would typically vary lambda (the penalty parameter) and use some criterion (e.g., cross-validation or AIC/BIC) to pick the best value. Coefficients shrunk to exactly zero are effectively removed."
+        },
+        "1.2": {
+            "title": "glmmPen",
+            "package": "glmmPen",
+            "approach": "Offers penalized GLMM fitting with several penalty options (including LASSO, group LASSO, and others).",
+            "notes": "Again, model selection typically involves tuning lambda or other penalty hyperparameters."
+        },
+        "1.3": {
+            "title": "glmmTMB with Penalized Covariates",
+            "package": "glmmTMB",
+            "approach": "Newer versions of glmmTMB support penalized regression terms via the dispformula or map arguments. However, this is more specialized, and the user guide has some notes on penalty structures if you want to explore advanced usage."
+        }
+        }
+    },
+    "2": {
+        "title": "Dimension Reduction Prior to GLMM",
+        "description": "Instead of penalizing many variables directly, you can reduce the dimension (e.g., by combining correlated predictors) and then feed fewer, uncorrelated components into the GLMM.",
+        "subsections": {
+        "2.1": {
+            "title": "Principal Component Analysis (PCA)",
+            "description": "Standardize or center/scale all predictors. Use PCA to derive principal components. Select the top k components (e.g., those with 80–90% cumulative variance explained). Fit your GLMM using these k components as fixed effects.",
+            "caution": [
+            "Interpretability may suffer since principal components are linear combinations of original predictors.",
+            "You may still need to consider cross-validation to choose the number of components."
+            ]
+        },
+        "2.11": {
+            "title": "Redundancy Analysis (RDA)",
+            "description": "Standardize or center/scale all predictors. Use RDA to derive variables unrelated to the Landscape.type.",
+            "instructions": [
+            "Use Landscape.type as a constraining variable.",
+            "Select the top k that are unrealted to the first axis of RDA"
+            ]
+        },
+        "2.2": {
+            "title": "Partial Least Squares (PLS)",
+            "description": "PLS is another dimension reduction technique often used when predictors are correlated and you want to maximize covariance with the response. You can do PLS on your predictors and outcome (for a GLM-like setting) and then carry the top latent components into a GLMM.",
+            "packages": ["pls", "caret"],
+            "approach": [
+            "Fit a PLS model (possibly with the response in a supervised way).",
+            "Extract the top components.",
+            "Use those in your GLMM."
+            ]
+        }
+        }
+    },
+    "step3": {
+        "title": "Stepwise Variable Selection (With Caution)",
+        "description": "Stepwise selection (forward, backward, or both) is often discouraged in modern statistical practice due to bias in p-values and potential overfitting. Nonetheless, a carefully used stepwise approach (with information criteria like AIC/BIC) can be a pragmatic, if imperfect, tool for reducing variables.",
+        "subsections": {
+        "3.1": {
+            "title": "StepAIC with Mixed Models",
+            "description": "While stepAIC from MASS does not natively handle mixed models automatically, some workarounds exist (e.g., the lmerTest + step method, or custom routines). However, you should be extremely cautious given your small sample size and large number of predictors."
+        }
+        }
+    },
+    "step4": {
+        "title": "Bayesian Shrinkage (Hierarchical Modeling with Priors)",
+        "description": "A Bayesian approach allows you to place shrinkage priors (e.g., Laplace priors for LASSO-like behavior, horseshoe priors for sparse signals) on the fixed effects in a mixed model.",
+        "package": ["brms", "rstanarm", "blme"]
+    },
+    "step5": {
+        "title": "Correlation Filtering or Clustering of Predictors",
+        "description": "A simpler preliminary step is to reduce redundancy by computing a correlation matrix and filtering highly correlated predictors."
+    },
+    "practical_recommendations": [
+        "Check Multicollinearity",
+        "Regularization is Often Safer",
+        "Use Resampling",
+        "Interpretability vs. Accuracy"
+    ]
+},
+{   
+    "step_number": 4,
+    "description": "Test difference in fixed predictor values between urban and rural sites (Landscape.type).",
+    "methods": [
+        "Test for normality of the fixed predictor values.",
+        "Test for homogeneity of variance of the fixed predictor values.",
+        "Test for normality of the residuals after you perform the parametric tests.",
+        "Perform t-tests or Mann-Whitney U tests if data is not normally distributed.",
+        "Visualize the results.",
+        "Return fixed predictor names that are not significantly different between urban and rural sites."
+    ],
+    "fixed_predictors":[
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer.",
+        "Distance.to.the.city.centre..m.",
+        "Trees.and.shrubs.in.buffer.250.m....",
+        "Grasslands.in.buffer.250.m....",
+        "Trees.and.shrubs.in.bufffer.500.m....",
+        "Grasslands.in.bufffer.500.m....",
+        "Trees.and.shrubs.in.bufffer.750.m....",
+        "Grasslands.in.bufffer.750.m....",
+        "Trees.and.shrubs.in.bufffer.1000.m....",
+        "Grasslands.in.bufffer.1000.m....",
+        "Trees.and.shrubs.in.bufffer.1500.m....",
+        "Grasslands.in.bufffer.1500.m....",
+        "Landscape.diversity.in.buffer.250.m",
+        "Landscape.diversity.in.buffer.500.m",
+        "Landscape.diversity.in.buffer.750.m",
+        "Landscape.diversity.in.buffer.1000.m",
+        "Landscape.diversity.in.buffer.1500.m",
+        "Impervious.surface.area.in.buffer.250.m..mean.",
+        "Impervious.surface.area.in.buffer.500.m..mean.",
+        "Impervious.surface.area.in.buffer.750.m..mean.",
+        "Impervious.surface.area.in.buffer.1000.m..mean.",
+        "Impervious.surface.area.in.buffer.1500.m..mean.",
+        "Population.density.in.buffer.250.m",
+        "Population.density.in.buffer.500.m",
+        "Population.density.in.buffer.750.m",
+        "Population.density.in.buffer.1000.m",
+        "Population.density.in.buffer.1500.m"
+    ]
+    }
+}  
+  
+,
+    {
+    "step_number": 4.0,
+    "description": "Perform a GLMM of bee abundance and richness with urban and rural sites (Landscape.type) as predictor.",
+    "methods": [
+        "Aggregate abundnace counts by Site.number. and Month.",
+        "Use SiteAbundance and SiteRichness as response variables.",
+        "Use Landscape.type as a fixed predictor.",
+        "Include Month as a random effect.",
+        "Perform a forward model selection to arrive at the best-supported model that avoids overfitting.",
+        "Perform the forward selection based on AIC in two ways: First select variabales from all the fixed predictors, then select variables from the reduced set of predictors.",
+        "From all available variables step-by-step pick one variable one that improves the base model, and then repeat this procedure untill addition of variables does not improve the model.",
+        "Test for normality of the residuals after you perform the parametric tests.",
+        "Visualize the results: plot values of species richness and abundance predicted by the model together with empirical values.",
+        "Plot partial correlatino plots for the significant fixed predictors.",
+        "Return the coefficient table for the best model."
+    ],
+    "reduced_set_of_predictors":[
+        "Coverage.of.bee.food.plant.species....",
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Trees.and.shrubs.in.buffer.250.m....",
+        "Trees.and.shrubs.in.bufffer.500.m....",
+        "Grasslands.in.bufffer.500.m....",
+        "Trees.and.shrubs.in.bufffer.750.m....",
+        "Grasslands.in.bufffer.750.m....",
+        "Trees.and.shrubs.in.bufffer.1000.m....",
+        "Grasslands.in.bufffer.1000.m....",
+        "Trees.and.shrubs.in.bufffer.1500.m....",
+        "Landscape.diversity.in.buffer.1000.m",
+        "Landscape.diversity.in.buffer.1500.m"  
+    ],            
+    "fixed_predictors":[
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer.",
+        "Distance.to.the.city.centre..m.",
+        "Trees.and.shrubs.in.buffer.250.m....",
+        "Grasslands.in.buffer.250.m....",
+        "Trees.and.shrubs.in.bufffer.500.m....",
+        "Grasslands.in.bufffer.500.m....",
+        "Trees.and.shrubs.in.bufffer.750.m....",
+        "Grasslands.in.bufffer.750.m....",
+        "Trees.and.shrubs.in.bufffer.1000.m....",
+        "Grasslands.in.bufffer.1000.m....",
+        "Trees.and.shrubs.in.bufffer.1500.m....",
+        "Grasslands.in.bufffer.1500.m....",
+        "Landscape.diversity.in.buffer.250.m",
+        "Landscape.diversity.in.buffer.500.m",
+        "Landscape.diversity.in.buffer.750.m",
+        "Landscape.diversity.in.buffer.1000.m",
+        "Landscape.diversity.in.buffer.1500.m",
+        "Impervious.surface.area.in.buffer.250.m..mean.",
+        "Impervious.surface.area.in.buffer.500.m..mean.",
+        "Impervious.surface.area.in.buffer.750.m..mean.",
+        "Impervious.surface.area.in.buffer.1000.m..mean.",
+        "Impervious.surface.area.in.buffer.1500.m..mean.",
+        "Population.density.in.buffer.250.m",
+        "Population.density.in.buffer.500.m",
+        "Population.density.in.buffer.750.m",
+        "Population.density.in.buffer.1000.m",
+        "Population.density.in.buffer.1500.m"
+    ]
+    },
+    {
+    },
+    {
+    "step_number": 4.2,
+    "description": "Perform a deimensional reduction of the predictor variables.",
+    "methods": [
+        "Use PCA to reduce the dimensionality of the predictor variables within each of the buffer zones (250m, 500m, 750m, 1000m, 1500m).",
+        "Use the first 5-10 principal components as predictors in subsequent models."
+    ]
+    },
+    {
+    "step_number": 4.3,
+    "description": [
+        "Fit GLMM or GAMM models to evaluate how abundance and species richness respond to local and landscape factors.",
+        "For each buffer, reduce multicollinearity by replacing sets of correlated predictors with a smaller number of principal components.",
+        "Include both the reduced (PC) predictors and key fixed predictors a priori deemed important.",
+        "Use stepwise selection (forward or backward), penalized regression, and cross-validation to arrive at the best-supported model that avoids overfitting."
+    ],
+    "response_variables": {
+        "SiteAbundance": ["negative binomial (if overdispersed)", "logarithm of SiteAbundance"],
+        "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+    },
+    "fixed_predictors":[
+        "Landscape.type",
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer."
+    ],
+    "random_effects": ["Month"]
+    },
+    {
+    "step_number": 4.4,
+    "description": [
+        "Fit GLMM and GAMM models to evaluate how abundance and species richness respond to the landscape type.",
+        "Add other fixed predictors that are a priori deemed important: Floral richness, Alien floral richness, Native floral richness, Spontaneous floral richness, Ornamental floral richness, Age (years), Area size (m2), Bare ground, Perimeter area ratio, Isolation (100 m buffer).",
+        "Then include both the reduced ('PC_all_1', 'PC_all_2') predictors and test for the model improvement.",
+        "Use stepwise selection (forward), penalized regression, and cross-validation to arrive at the best-supported model that avoids overfitting."
+    ],
+    "response_variables": {
+        "SiteAbundance": ["negative binomial (if overdispersed)", "logarithm of SiteAbundance"],
+        "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+    },
+    "fixed_predictors":[
+        "Landscape.type",
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer."
+    ],
+    "random_effects": ["Site.number, but consider also a model without it", "Month"]
+    },
+    {
+    "step_number": 4.5,
+    "description": [
+        "Fit GAMM models to evaluate how abundance and species richness respond to the Month", 
+        "wether responses are different between landscape types.",
+        "Add other fixed predictors that are a priori deemed important: Floral richness, Alien floral richness, Native floral richness, Spontaneous floral richness, Ornamental floral richness, Age (years), Area size (m2), Bare ground, Perimeter area ratio, Isolation (100 m buffer).",
+        "Then include both the reduced (PC) predictors and test for the model improvement.",
+        "Use stepwise selection (forward), penalized regression, and cross-validation to arrive at the best-supported model that avoids overfitting.",
+        "Visualize the results."
+    ],
+    "response_variables": {
+        "SiteAbundance": ["negative binomial (if overdispersed)", "logarithm of SiteAbundance"],
+        "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+    },
+    "fixed_predictors":[
+        "Landscape.type",
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer."
+    ],
+    "random_effects": ["Site.number, but consider also a model without it."]
+    }
+}
