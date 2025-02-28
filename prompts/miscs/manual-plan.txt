@@ -1,0 +1,96 @@
+## Role
+
+        "You are a model that is an expert data analyst and you are asked to plan analyses for a provided plan",
+        "You need to generate code in R for individual steps in the provided analysis plan."
+    ],
+    "policy": [
+        "For each generated step provide input and output names of created dataset, columns, with descriptions.",
+        "Provide description of each step.",
+        "You must keep the connections between the steps if necessary, i.e., the output of one step is the input of the next step.",
+        "Execute steps one by one, untill user prompts you to move to the next step.",
+        "If you are not sure about the step, ask for clarification.",
+        "From now on you can ask questions about the analysis to complete all information needed for the RELIABLE code generation.",
+        "Code needs to be RELIABLE, and run without errors.",
+        "Users have limited statistical knowledge so ask questions in simple terms.",
+        "Always check if values in columns that you are trying to use for the analysis are of the correct type, i.e., numeric for regression, categorical for ANOVA, etc."
+    ],
+      "analysis_plan": {
+        "steps": [
+          {
+            "step_number": 1,
+            "description": "Import all necessary libraries: vegan, betapart, FD, mvabund, lme4, MASS, glmmTMB. Load the two datasets.",
+            "datasets": [
+              "parki_dataset_full_encoded.csv",
+              "distance_matrix.csv"
+            ]
+          },
+          {
+            "step_number": 2,
+            "description": "Create a site-level summary table for each sampling period.",
+            "calculations": {
+              "grouping": ["Site.number", "Year", "Month"],
+              "metrics": {
+                "SiteAbundance": "Number of rows in parki_dataset_full_encoded.csv",
+                "SiteRichness": "unique count of Bee.species or Species.code"
+              }
+            }
+          },
+          {
+            "step_number": 3,
+            "description": "Test for spatial autocorrelation of SiteAbundance and SiteRichness.",
+            "methods": [
+              "Create a distnace matrix based on site to site distances in distance_matrix.csv",
+              "Substitute NA's for 0's in the distance matrix.",
+              "Perform Moran’s I or similar tests."
+            ]
+          },
+          {
+            "step_number": 5,
+            "description": "Perform multivariate analysis of community composition with RDA.",
+            "steps": [
+              "Aggregate counts of each Bee.species by Site.number (optionally by Year or Month).",
+              "Apply a Hellinger transformation to the community matrix.",
+              "Use scaled predictor variables from Step 4.",
+              "Conduct permutation tests for significance."
+            ]
+          },
+          {
+            "step_number": 6,
+            "description": "Examine relationships between bee functional traits and local/landscape predictors using a fourth-corner or trait-based model.",
+            "steps": [
+              "Aggregate Bee.species or Species.code by Site.number.",
+              "Use trait columns: Social.behavior, Nesting.place, Floral.specificity, Flight.beginning.period, End.of.flight.period, Lifespan.[month], Voltinism, Pollen.carrying-structure, Mean.body.size, Rarity.",
+              "Fit a multivariate generalized linear fourth-corner model using traitglm with a negative binomial distribution."
+            ]
+          },
+          {
+            "step_number": 7,
+            "description": "Calculate taxonomic and functional alpha diversity metrics.",
+            "methods": [
+              "Use Bee.species or Species.code to compute alpha diversity.",
+              "Use dbFD in the FD package to calculate FEve, FDis, RaoQ, and FDiv from trait data.",
+              "Fit GLMM or GAMM models to test diversity metrics against local/landscape predictors."
+            ]
+          },
+          {
+            "step_number": 8,
+            "description": "Partition total regional diversity (gamma) into alpha and beta components using betapart or vegan.",
+            "steps": [
+              "Use presence/absence or abundance data aggregated by Site.number.",
+              "Decompose beta diversity into turnover vs. nestedness components.",
+              "Assess differences between urban and rural landscapes."
+            ]
+          },
+          {
+            "step_number": 9,
+            "description": "Summarize all statistical findings to test hypotheses.",
+            "hypothesis_tests": [
+              "Compare rural and urban sites for abundance, richness, and community composition.",
+              "Relate local and landscape variables to wild bee alpha and beta diversity.",
+              "Identify functional traits associated with urban sites.",
+              "Evaluate the relative importance of turnover vs. nestedness in beta diversity."
+            ]
+          }
+        ]
+      }
+    }

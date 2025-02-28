@@ -1,0 +1,223 @@
+{
+    "step_number": 4,
+    "description": "Model selection to test difference in fixed predictor values between urban and rural sites (Landscape.type).",
+    "inputs": ["parki_dataset_full_encoded.csv"],
+    "response_variables": ["SiteAbundance", "SiteRichness"],
+    "fixed_predictors":[
+        "Landscape.type",
+        "Coverage.of.bee.food.plant.species....",
+        "Floral.richness",
+        "Alien.floral.richness....",
+        "Native.floral.richness....",
+        "Spontaneous.floral.richness....",
+        "Ornamental.floral.richness....",
+        "Age..years.",
+        "Area.size..m2.",
+        "Bare.ground....",
+        "Perimeter.area.ratio",
+        "Isolation..100.m.buffer.",
+        "Distance.to.the.city.centre..m.",
+        "Trees.and.shrubs.in.buffer.250.m....",
+        "Grasslands.in.buffer.250.m....",
+        "Trees.and.shrubs.in.bufffer.500.m....",
+        "Grasslands.in.bufffer.500.m....",
+        "Trees.and.shrubs.in.bufffer.750.m....",
+        "Grasslands.in.bufffer.750.m....",
+        "Trees.and.shrubs.in.bufffer.1000.m....",
+        "Grasslands.in.bufffer.1000.m....",
+        "Trees.and.shrubs.in.bufffer.1500.m....",
+        "Grasslands.in.bufffer.1500.m....",
+        "Landscape.diversity.in.buffer.250.m",
+        "Landscape.diversity.in.buffer.500.m",
+        "Landscape.diversity.in.buffer.750.m",
+        "Landscape.diversity.in.buffer.1000.m",
+        "Landscape.diversity.in.buffer.1500.m",
+        "Impervious.surface.area.in.buffer.250.m..mean.",
+        "Impervious.surface.area.in.buffer.500.m..mean.",
+        "Impervious.surface.area.in.buffer.750.m..mean.",
+        "Impervious.surface.area.in.buffer.1000.m..mean.",
+        "Impervious.surface.area.in.buffer.1500.m..mean.",
+        "Population.density.in.buffer.250.m",
+        "Population.density.in.buffer.500.m",
+        "Population.density.in.buffer.750.m",
+        "Population.density.in.buffer.1000.m",
+        "Population.density.in.buffer.1500.m"
+    ],
+    "methods": [
+        {
+            "step": 1,
+            "description": "Prepare the data for the analysis",
+            "instructions": [
+                "Aggregate abundnace counts by Site.number. and Month.",
+                "Use SiteAbundance and SiteRichness as response variables.",
+                "SiteAbundance is a number of rows n()",
+                "SiteRichness are a number of unique bee codes",
+                "Rest of the colums should return unique value for each grouping."
+            ],
+            "outputs": {
+                "description": "Summarized dataset for the GLMM an RDA analysis.",
+                "type": "tibble",
+                "name": "summarized_data"
+            }
+        },
+        {
+            "step": 2,
+            "description": "Redundancy Analysis (RDA) for variable selection",
+            "instructions": [
+                "Standardize or center/scale all predictors. Use RDA to derive variables unrelated to the Landscape.type.",
+                "Use Landscape.type as a constraining variable.",
+                "Select the variables with scores above a threshold 0.5 on the PC1 axis, that are unrealted to the RDA1 axis"
+            ],
+            "inputs": ["summarized_data"],
+            "outputs": {
+                "output_number": 1,
+                "description": "List of variables selected in the RDA procedure",
+                "type": "DataFrame",
+                "name": "selected_varibales"
+            }
+        },
+        {
+            "step": 3,
+            "description":  "Perform a GLMM of bee abundance and richness with only urban and rural sites (Landscape.type) as only one fixed variable.",
+            "instructions": [
+                "Test for normality of the fixed predictor values.",
+                "Test for homogeneity of variance of the fixed predictor values.",
+                "Test for normality of the residuals after you perform the parametric tests.",
+                "Test differernt distributions for the response variables and compare their AIC",
+                "Visualize the results.",
+                "Create coefficient and significance tables for the model with a caption."
+            ],
+            "inputs": ["selected_varibales", "summarized_data"],
+            "response_variables": {
+                "SiteAbundance": ["negative binomial (if overdispersed)", "Normal distribution for the logarithm of SiteAbundance"],
+                "SiteRichness": ["Normal distribution of logged SiteRichness values", "Poisson", "negative binomial"]
+            },
+            "random_factors": ["Site.numer (but consider also model without this factor)", "Month"],
+            "outputs": {
+                "output_number": 1,
+                "description": "GLMM model output",
+                "type": "glmm model type",
+                "name": "glmm_model"
+            }
+        },
+        {"step": 4,
+            "description": "Make all possible subsets of up to 10 fixed predictors and compare their AIC values.",
+            "motivation":[
+                "For reliable parameter estimation in a Generalized Linear Mixed Model (GLMM) in R, a common rule of thumb is:",
+                "At least 5-10 observations per fixed-effect parameter (including the intercept).",
+                "At least 5-6 levels per random effect (fewer levels reduce the ability to estimate variance components reliably).",
+                "At least 10 observations per level of the random effect for reasonable variance estimates.",
+                "Given your data:",
+                "110 total observations",
+                "One random effect with 5 levels (which means, on average, ~22 observations per level)",
+                "Step-by-Step Check:",
+                "Fixed Effects:",
+                "If we follow the rule of 10 observations per parameter, then with 110 observations, you could include up to ~10 fixed-effect parameters (including the intercept).",
+                "If we are more conservative and use 5 observations per parameter, this would allow for ~22 fixed-effect parameters.",
+                "Random Effects:",
+                "You have 5 levels, which is close to the minimum recommended number for estimating variance components reliably.",
+                "If there were fewer levels (e.g., 3 or 4), estimation would be unstable.",
+                "Conclusion:",
+                "A safe upper limit would be ~10 fixed-effect parameters, ensuring that each parameter has at least 10 observations.",
+                "If the model includes interaction terms or polynomial terms, this counts toward the total number of parameters."
+            ],
+            "instructions": [
+                "Create all possible subsets of up to 10 fixed predictors.",
+                "Run a GLMM model for each subset.",
+                "Compare their AIC values.",
+                "Select the model with the lowest AIC value."
+            ],
+            "inputs": ["summarized_data"],
+            "outputs": {
+                "output_number": 1,
+                "description": "List of variables selected in the RDA procedure",
+                "type": "glmm model type",
+                "name": "best_model"
+            },
+            "random_factors": ["Site.numer (but consider also model without this factor)", "Month"]
+        },
+        {
+            "step": 5,
+            "description": "Attempt common techniquest for variable selection in for the GLMM model of richness and diversity.",
+            "instructions": [
+                {
+                    "title": "Penalized (Regularized) Regression for GLMMs",
+                    "description": "Penalized regression methods (e.g., LASSO, Ridge, Elastic Net) can be extended to mixed models to perform variable selection or coefficient shrinkage. The penalty term helps control model complexity by shrinking regression coefficients—some all the way to zero in the LASSO case.",
+                    "subsections": {
+                    "1.1": {
+                        "title": "glmmLasso",
+                        "package": "glmmLasso",
+                        "approach": "Implements a LASSO penalty on the fixed effects in a GLMM.",
+                        "notes": "You would typically vary lambda (the penalty parameter) and use some criterion (e.g., cross-validation or AIC/BIC) to pick the best value. Coefficients shrunk to exactly zero are effectively removed."
+                    },
+                    "1.2": {
+                        "title": "glmmPen",
+                        "package": "glmmPen",
+                        "approach": "Offers penalized GLMM fitting with several penalty options (including LASSO, group LASSO, and others).",
+                        "notes": "Again, model selection typically involves tuning lambda or other penalty hyperparameters."
+                    },
+                    "1.3": {
+                        "title": "glmmTMB with Penalized Covariates",
+                        "package": "glmmTMB",
+                        "approach": "Newer versions of glmmTMB support penalized regression terms via the dispformula or map arguments. However, this is more specialized, and the user guide has some notes on penalty structures if you want to explore advanced usage."
+                    }
+                    }
+                },
+                {
+                    "title": "Dimension Reduction Prior to GLMM",
+                    "description": "Instead of penalizing many variables directly, you can reduce the dimension (e.g., by combining correlated predictors) and then feed fewer, uncorrelated components into the GLMM.",
+                    "subsections": {
+                    "2.1": {
+                        "title": "Principal Component Analysis (PCA)",
+                        "description": "Standardize or center/scale all predictors. Use PCA to derive principal components. Select the top k components (e.g., those with 80–90% cumulative variance explained). Fit your GLMM using these k components as fixed effects.",
+                        "caution": [
+                        "Interpretability may suffer since principal components are linear combinations of original predictors.",
+                        "You may still need to consider cross-validation to choose the number of components."
+                        ]
+                    },
+                    "2.2": {
+                        "title": "Partial Least Squares (PLS)",
+                        "description": "PLS is another dimension reduction technique often used when predictors are correlated and you want to maximize covariance with the response. You can do PLS on your predictors and outcome (for a GLM-like setting) and then carry the top latent components into a GLMM.",
+                        "packages": ["pls", "caret"],
+                        "approach": [
+                        "Fit a PLS model (possibly with the response in a supervised way).",
+                        "Extract the top components.",
+                        "Use those in your GLMM."
+                        ]
+                    }
+                }
+            },
+            {
+                "title": "Stepwise Variable Selection (With Caution)",
+                "description": "Stepwise selection (forward, backward, or both) is often discouraged in modern statistical practice due to bias in p-values and potential overfitting. Nonetheless, a carefully used stepwise approach (with information criteria like AIC/BIC) can be a pragmatic, if imperfect, tool for reducing variables.",
+                "subsections": {
+                "3.1": {
+                "title": "StepAIC with Mixed Models",
+                    "description": "While stepAIC from MASS does not natively handle mixed models automatically, some workarounds exist (e.g., the lmerTest + step method, or custom routines). However, you should be extremely cautious given your small sample size and large number of predictors."
+                }
+                }
+            },
+            {
+                "title": "Bayesian Shrinkage (Hierarchical Modeling with Priors)",
+                "description": "A Bayesian approach allows you to place shrinkage priors (e.g., Laplace priors for LASSO-like behavior, horseshoe priors for sparse signals) on the fixed effects in a mixed model.",
+                "package": ["brms", "rstanarm", "blme"]
+            },
+            {
+                "title": "Correlation Filtering or Clustering of Predictors",
+                "description": "A simpler preliminary step is to reduce redundancy by computing a correlation matrix and filtering highly correlated predictors."
+            }
+        ]
+    },
+    {
+        "step": 6,
+        "description": "",
+        "instructions": [
+            "",
+            "",
+            "",
+            "",
+            ""
+            ]
+    }
+]
+}
