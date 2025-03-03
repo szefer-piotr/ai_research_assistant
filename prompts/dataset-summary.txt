@@ -1,0 +1,76 @@
+# Parki Dataset Summary
+
+## Dataset Dimensions
+
+- **Number of rows:** 5763
+- **Number of columns:** 61
+
+## Column Descriptions
+
+| Column | Description | Type | Unique Values |
+|--------|-------------|------|---------------|
+| INDEX_OF_INDIVIDUALS | Unique identifier for individuals. | continuous | 5763 unique values |
+| Bee.species | Full species name of the bee. | categorical | 188 unique values |
+| Species.code | Abbreviated species code. | categorical | 188 unique values |
+| Sex | Sex of the individual (e.g., male, female). | categorical | 2: ['female', 'male'] |
+| Site.number | Identifier for the study site. | categorical | 22 unique values |
+| Year | Year when the observation was recorded. | categorical (numeric) | 2: [2018, 2019] |
+| Month | Month of the observation (as a name). | categorical | 5: ['April', 'August', 'July', 'June', 'May'] |
+| Day | Day of the month for the observation. | continuous | 23 unique values |
+| Family | Taxonomic family of the bee. | categorical | 6: ['Andrenidae', 'Apidae', 'Colletidae', 'Halictidae', 'Megachilidae', 'Melittidae'] |
+| Social.behavior | Social behavior type (e.g., solitary, social). | categorical | 3: ['clep', 'euso', 'solit'] |
+| Nesting.place | Location of nesting (e.g., soil, cavity). | categorical | 4: ['cav', 'clep', 'hiv', 'soil'] |
+| Floral.specificity | Degree of floral specialization (polylectic, oligolectic, etc.). | categorical | 3: ['clep', 'oli', 'poly'] |
+| Flight.beginning.period | Start period of the bee flight season. | categorical | 3: ['July/August', 'March/April', 'May/June'] |
+| End.of.flight.period | End period of the bee flight season. | categorical | 3: ['July/August', 'May/June', 'September/October'] |
+| Lifespan.[month] | Lifespan of the bee in months. | categorical (numeric) | 8: [1, 2, 3, 4, 5, 6, 7, 8] |
+| Voltinism | Number of generations per year (univoltine, multivoltine, etc.). | categorical | 2: ['biv', 'mon'] |
+| Pollen.carrying-structure | Structure used by bees to carry pollen (e.g., scopa on leg). | categorical | 5: ['clep', 'corbicula on leg', 'crop', 'scopa on abdomen', 'scopa on leg'] |
+| Mean.body.size | Average body size of the bee. | categorical | 3: ['large', 'medium', 'small'] |
+| Rarity | Rarity status of the bee (e.g., common, rare). | categorical | 2: ['common', 'rare'] |
+| Landscape.type | Type of landscape where observed (urban, rural, etc.). | categorical | 2: ['rural', 'urban'] |
+| Latitude.(N) | Latitude coordinate (North). | categorical | 22 unique values |
+| Longitude.(E) | Longitude coordinate (East). | categorical | 22 unique values |
+| Shortest.distance.between.sites.[m] | Shortest distance between study sites in meters. | continuous | 18 unique values |
+| Year.of.research | Year when the research was conducted. | categorical (numeric) | 2: [2018, 2019] |
+| Coverage.of.bee.food.plant.species.[%] | Percentage coverage of bee food plant species. | categorical (numeric) | 18 unique values |
+| Floral.richness | Number of different floral species present. | continuous | 20 unique values |
+| Alien.floral.richness.[%] | Percentage value for alien floral richness. | continuous | 21 unique values |
+| Native.floral.richness.[%] | Percentage value for native floral richness. | continuous | 20 unique values |
+| Spontaneous.floral.richness.[%] | Percentage value for spontaneous floral richness. | continuous | 19 unique values |
+| Ornamental.floral.richness.[%] | Percentage value for ornamental floral richness. | continuous | 19 unique values |
+| Age.[years] | Age of the study subject in years. | categorical (numeric) | 17 unique values |
+| Area.size.[m2] | Area size in square meters. | continuous | 22 unique values |
+| Bare.ground.[%] | Percentage of bare ground in the area. | categorical (numeric) | 14 unique values |
+| Perimeter–area.ratio | Ratio of perimeter to area (complexity measure). | continuous | 22 unique values |
+| Isolation.[100.m.buffer] | Degree of isolation in a 100m buffer around the site. | categorical (numeric) | 9: [2, 3, 4, 6, 7, 8, 9, 11, 12] |
+| Distance.to.the.city.centre.[m] | Distance from the site to the city centre in meters. | continuous | 22 unique values |
+| Trees.and.shrubs.in.buffer.250.m.[%] | Percentage of trees and shrubs cover within a 250m buffer. | continuous | 22 unique values |
+| Grasslands.in.buffer.250.m.[%] | Percentage of grasslands within a 250m buffer. | continuous | 22 unique values |
+| Trees.and.shrubs.in.bufffer.500.m.[%] | Percentage of trees and shrubs cover within a 500m buffer. | continuous | 22 unique values |
+| Grasslands.in.bufffer.500.m.[%] | Percentage of grasslands within a 500m buffer. | continuous | 22 unique values |
+| Trees.and.shrubs.in.bufffer.750.m.[%] | Percentage of trees and shrubs cover within a 750m buffer. | continuous | 22 unique values |
+| Grasslands.in.bufffer.750.m.[%] | Percentage of grasslands within a 750m buffer. | continuous | 22 unique values |
+| Trees.and.shrubs.in.bufffer.1000.m.[%] | Percentage of trees and shrubs cover within a 1000m buffer. | continuous | 22 unique values |
+| Grasslands.in.bufffer.1000.m.[%] | Percentage of grasslands within a 1000m buffer. | continuous | 22 unique values |
+| Trees.and.shrubs.in.bufffer.1500.m.[%] | Percentage of trees and shrubs cover within a 1500m buffer. | continuous | 22 unique values |
+| Grasslands.in.bufffer.1500.m.[%] | Percentage of grasslands within a 1500m buffer. | continuous | 22 unique values |
+| Landscape.diversity.in.buffer.250.m | Measure of landscape diversity within a 250m buffer. | continuous | 22 unique values |
+| Landscape.diversity.in.buffer.500.m | Measure of landscape diversity within a 500m buffer. | continuous | 22 unique values |
+| Landscape.diversity.in.buffer.750.m | Measure of landscape diversity within a 750m buffer. | continuous | 22 unique values |
+| Landscape.diversity.in.buffer.1000.m | Measure of landscape diversity within a 1000m buffer. | continuous | 21 unique values |
+| Landscape.diversity.in.buffer.1500.m | Measure of landscape diversity within a 1500m buffer. | continuous | 21 unique values |
+| Impervious.surface.area.in.buffer.250.m.[mean] | Mean impervious surface area percentage within a 250m buffer. | continuous | 22 unique values |
+| Impervious.surface.area.in.buffer.500.m.[mean] | Mean impervious surface area percentage within a 500m buffer. | continuous | 22 unique values |
+| Impervious.surface.area.in.buffer.750.m.[mean] | Mean impervious surface area percentage within a 750m buffer. | continuous | 22 unique values |
+| Impervious.surface.area.in.buffer.1000.m.[mean] | Mean impervious surface area percentage within a 1000m buffer. | continuous | 22 unique values |
+| Impervious.surface.area.in.buffer.1500.m.[mean] | Mean impervious surface area percentage within a 1500m buffer. | continuous | 22 unique values |
+| Population.density.in.buffer.250.m | Population density within a 250m buffer. | continuous | 22 unique values |
+| Population.density.in.buffer.500.m | Population density within a 500m buffer. | continuous | 22 unique values |
+| Population.density.in.buffer.750.m | Population density within a 750m buffer. | continuous | 22 unique values |
+| Population.density.in.buffer.1000.m | Population density within a 1000m buffer. | continuous | 22 unique values |
+| Population.density.in.buffer.1500.m | Population density within a 1500m buffer. | continuous | 22 unique values |
+
+## Note
+
+This dataset contains information about bee species, their characteristics, and environmental factors in their habitats. It includes biological attributes of bees (species, family, behavior), temporal information (year, month, day), and detailed landscape metrics at various buffer distances (250m, 500m, 750m, 1000m, 1500m).
