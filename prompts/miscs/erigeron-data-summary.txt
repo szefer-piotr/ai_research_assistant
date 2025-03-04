@@ -1,0 +1,117 @@
+# Excel File: erigeron_morphometria_pogoda.xlsx
+
+## Sheet 1: Analiza morfometryczna (Morphometric Analysis)
+Number of rows: 301
+Number of columns: 16
+Column Details:
+taxon: categorical
+Unique values: Erigeron x huelsenii, Erigeron acris, Erigeron canadensis
+population: categorical
+Unique values: PLEWKI (PLE), FILIPÓW TRZECI (FIT), WÓLKA (WOL)
+date: categorical
+Unique values: 19 Aug 2023, 22 Aug 2023, 23 Aug 2023, 24 Aug 2023, 27 Aug 2023, 29 Aug 2023, 25 Aug 2023, 26 Aug 2023, 28 Aug 2023
+Nr osobnika: continuous
+Range: 1 to 15 (specimen number)
+Położenie wiechy nad ziemią [cm]: continuous
+Range: 0.2 to 28.1 (panicle position above ground)
+Długość pędu [cm]: continuous
+Range: 11.4 to 57.0 (shoot length)
+Długość wiechy [cm]: continuous
+Range: 7.2 to 37.6 (panicle length)
+Szerokość wiechy [cm]: continuous
+Range: 1.9 to 22.3 (panicle width)
+Liczba odgałęzień I-rzędu w wiesze: continuous
+Range: 3 to 89 (number of first-order branches in panicle)
+Liczba koszyczków w wiesze: continuous
+Range: 7 to 938 (number of flower heads in panicle)
+Szerokość koszyczka nr 1 [cm]: continuous
+Range: 0.15 to 0.9 (width of flower head #1)
+Szerokość koszyczka nr 2 [cm]: continuous
+Range: 0.15 to 1.0 (width of flower head #2)
+Szerokość koszyczka nr 3 [cm]: continuous
+Range: 0.15 to 1.0 (width of flower head #3)
+Szerokość koszyczka nr 4 [cm]: continuous
+Range: 0.15 to 0.9 (width of flower head #4)
+Szerokość koszyczka nr 5 [cm]: continuous
+Range: 0.15 to 0.9 (width of flower head #5)
+Średnia szerokość koszyczka dla pięciu koszyczków [cm]: continuous
+Range: 0.17 to 0.92 (average width of five flower heads)
+
+## Sheet 2: Warunki pogodowe (Weather Conditions)
+Number of rows: 27
+Number of columns: 8
+Column Details:
+Locality: categorical
+Unique values: PLEWKI, FILIPÓW TRZECI, WÓLKA
+bad_formatted_date_old: categorical
+Unique values: 19 Aug 2023, 22 Aug 2023, 23 Aug 2023, 24 Aug 2023, 25 Aug 2023, 26 Aug 2023, 27 Aug 2023, 28 Aug 2023, 29 Aug 2023
+Date: categorical
+Formatted dates corresponding to bad_formatted_date_old
+Hourly interval: categorical
+Unique values: 9:00-10:00, 12:00-13:00, 15:00-16:00
+Air temperature [°C]: continuous
+Range: 16.5 to 30.0
+Wind speed [km/h]: continuous
+Range: 4.0 to 24.0
+Cloud cover [%]: continuous
+Range: 10.0 to 100.0
+Air humidity [%]: continuous
+Range: 45.5 to 87.5
+
+
+# Excel File: erigeron_biochemia.xlsx
+## Sheet: compound_groups
+- Rows: 106
+- Columns: 2
+### Column Details:
+- **Group** (categorical)
+  - Unique values (8): Monoterpenes, Sesquiterpenes, Alkenes, Alcohols, Aldehydes, Ketones, Esters, Other compunds
+- **Compounds** (text)
+## Sheet: compounds_area_tic
+- Rows: 106
+- Columns: 80
+### Column Details:
+- **Compound** (text)
+- **Formula** (text)
+- **CAS** (text)
+- **m/z** (text)
+- **M+** (categorical (numeric))
+- **tret. (min.)** (continuous)
+- **RIexp.** (continuous)
+- **RIlit.** (text)
+#### Measurement Columns:
+The sheet contains multiple measurement columns organized in pairs (Area and TIC %) for different samples:
+- **Eh1-Eh13**: 26 columns of measurements
+- **Ec1-Ec13**: 26 columns of measurements 
+- **Ea1-Ea12**: 24 columns of measurements
+Each sample code (Eh, Ec, Ea) appears to represent different experimental conditions or samples, with each having both Area and TIC % measurements.
+This dataset appears to contain biochemical analysis of compounds found in Erigeron species, with detailed measurements of various chemical compounds across multiple samples. The compound_groups sheet categorizes compounds into chemical families, while the compounds_area_tic sheet provides detailed analytical measurements including retention times, mass spectrometry data, and quantitative measurements across multiple samples.
+
+# Excel File: insects.xlsx
+
+## General Information
+- Number of rows: 301
+- Number of columns: 12
+
+## Column Descriptions and Types
+
+| Column Name | Description | Type | Unique Values |
+|-------------|-------------|------|---------------|
+| KOD | Sample identifier code | Categorical (text) | 45 unique values (EA_1, EA_2, etc.) |
+| PLANT_TAXON | Plant species taxonomy | Categorical (text) | 3 unique values: erigeron_acris, erigeron_canadensis, erigeron_huelseni |
+| DATA ZBIORU | Collection date | Date/time | 9 unique dates between August 19-29, 2023 |
+| LOKALIZACJA | Location of collection | Categorical (text) | 3 unique values: Filipów III, PLEWKI, WÓLKA |
+| total_arthropods | Total number of arthropods collected | Categorical (numeric) | 7 unique values: 1, 2, 3, 4, 6, 7, 11 |
+| diptera | Count of Diptera (flies) | Categorical (numeric) | 3 unique values: 1, 2, 3 |
+| heteroptera | Count of Heteroptera (true bugs) | Categorical (numeric) | 5 unique values: 1, 2, 3, 6, 11 |
+| hymenoptera | Count of Hymenoptera (bees, wasps, ants) | Categorical (numeric) | 2 unique values: 1, 2 |
+| ichnemonidae | Count of Ichneumonidae (parasitoid wasps) | Boolean/binary | 1 unique value: 1 |
+| other_hymenoptera | Count of other Hymenoptera | Boolean/binary | 1 unique value: 1 |
+| coleoptera | Count of Coleoptera (beetles) | Boolean/binary | 1 unique value: 1 |
+| trichoptera | Count of Trichoptera (caddisflies) | Boolean/binary | 1 unique value: 1 |
+
+## Notes
+- The dataset appears to be a collection of insect observations on different Erigeron plant species.
+- Many columns contain NA values, indicating that certain insect types were not present in all samples.
+- The last four insect types (ichneumonidae, other_hymenoptera, coleoptera, trichoptera) only have a value of 1 when present, suggesting they are recorded as presence/absence.
+- The dataset was collected over a short period in August 2023 at three different locations.
