@@ -224,21 +224,101 @@ def llm_refine_plan(current_plan: str, user_input: str) -> str:
 
 def llm_generate_code(plan_section: str) -> str:
     """
-    Generate code (Python, for data analysis) for a *single step* or portion of the plan.
-    Replace with actual LLM logic (o3-mini).
+    Generate Python code for a single step of the data analysis plan.
+    
+    The function sends the plan section to an LLM and expects Python code that implements
+    that step. The code is expected to be well-commented and assumes that the dataset is
+    available as a pandas DataFrame named 'df'.
+    
+    Replace the model name or parameters as needed for your actual LLM (e.g., o3-mini).
     """
-    # In practice, you'd pass the plan section to the model,
-    # and it would produce Python code implementing the step.
-    placeholder_code = f"# Placeholder code for plan section:\n# {plan_section}\n"
-    placeholder_code += "df.head()"  # Just a dummy line as an example
-    return placeholder_code
+    # Ensure the OpenAI API key is set (either via environment variable or directly)
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    
+    # Define the system message for context
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are an expert Python programmer specializing in data analysis. "
+            "When given a specific data analysis task, you produce well-commented, clean Python code "
+            "that implements the task. The code should assume that the dataset is available as a pandas "
+            "DataFrame called 'df'."
+        )
+    }
+    
+    # Define the user message with the specific plan section
+    user_message = {
+        "role": "user",
+        "content": (
+            f"Generate Python code for the following data analysis step:\n\n{plan_section}\n\n"
+            "Ensure that your code is well-commented, follows best practices, and is ready to run in a "
+            "typical data analysis environment using pandas."
+        )
+    }
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Adjust to the appropriate model if needed (e.g., a code-specialized model)
+            messages=[system_message, user_message],
+            temperature=0.2,       # Lower temperature for more deterministic code generation
+            max_tokens=300
+        )
+        generated_code = response.choices[0].message.content.strip()
+        return generated_code
+
+    except Exception as e:
+        # Fallback code in case of an error during the API call
+        fallback_code = (
+            f"# An error occurred while generating code: {str(e)}\n"
+            f"# Fallback code for the plan section:\n"
+            f"# {plan_section}\n"
+            "print(df.head())  # Example fallback operation"
+        )
+        return fallback_code
+
+
 
 def llm_interpret_report(results_summary: str) -> str:
     """
-    Summarize or interpret the final results for the user.
-    Replace with actual LLM logic (Summarizer).
+    Summarize or interpret the final results for the user using an LLM.
+    
+    The function instructs the LLM to interpret the provided final results summary in plain language.
+    Replace or adjust the model, temperature, and other parameters as needed.
     """
-    return f"Interpretation of the results:\n{results_summary}"
+    # Set your OpenAI API key from the environment
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    
+    # Define a system message to set the role and context for summarization
+    system_message = {
+        "role": "system",
+        "content": (
+            "You are an expert data analysis summarizer. Your role is to interpret and explain the final "
+            "results of a data analysis report in a clear and insightful manner."
+        )
+    }
+    
+    # Define a user message with the provided results summary and instruction
+    user_message = {
+        "role": "user",
+        "content": (
+            f"Below is the final results summary of a data analysis report:\n\n{results_summary}\n\n"
+            "Please provide a clear interpretation of these results in plain language that a non-expert can understand."
+        )
+    }
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Change to another model if needed (e.g., gpt-4)
+            messages=[system_message, user_message],
+            temperature=0.7,
+            max_tokens=200
+        )
+        interpretation = response.choices[0].message.content.strip()
+        return interpretation
+
+    except Exception as e:
+        return f"An error occurred while interpreting the report: {str(e)}"
+
 
 # -------------------------------
 # CODE INTERPRETER-LIKE EXECUTION
@@ -284,6 +364,35 @@ def run_code_until_no_error(code: str, df: pd.DataFrame = None, max_attempts: in
     # If we get here, we failed too many times
     return "Failed to execute code after multiple attempts.", df
 
+
+# -------------------
+# OPENAI ASSISTANT LOGIC
+# -------------------
+from openai import OpenAI
+
+def code_interpreter_assistant():
+    """ Create an OpenAI assistant for code interpretation tasks. """
+    
+    client = OpenAI()
+    
+    file = client.files.create(
+        file=open("mydata.csv", "rb"),
+        purpose='assistants'
+        )
+    
+    assistant = client.beta.assistants.create(
+        instructions="You are an expert in statistical analysis of ecological data. You need to write and run code for Python implementations of provided steps.",
+        model="gpt-4o",
+        tools=[{"type": "code_interpreter"}],
+        tool_resources={
+            "code_interpreter": {"type": "python", "description": "Python code interpreter"}}
+        )
+    
+    return assistant
+
+
+# Upload a file with an "assistants" purpose
+
 # -------------------
 # STREAMLIT APP LOGIC
 # -------------------
@@ -311,6 +420,8 @@ def main():
     else:
         st.info("Please upload a file to proceed.")
         st.stop()
+
+    # We have the df here
 
     # ---- STEP 2: Summarize the Dataset + Column Descriptions
     st.header("2. Summarize & Describe the Dataset")
