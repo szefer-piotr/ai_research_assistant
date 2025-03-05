@@ -421,6 +421,16 @@ def main():
         st.info("Please upload a file to proceed.")
         st.stop()
 
+    # Assistant logic
+    # thread = client.beta.threads.create(
+    #     messages=[
+    #         {
+    #             "role": "user",
+    #             "content": "Summarize the dataset."
+    #         }
+    #     ]
+    # )
+
     # We have the df here
 
     # ---- STEP 2: Summarize the Dataset + Column Descriptions
