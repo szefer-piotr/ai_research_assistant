@@ -18,11 +18,22 @@ developer_filename = "prompts/plan-generation-developer-message.txt"
 with open(developer_filename, "r", encoding="utf-8") as file:
     DEVELOPER_MESSAGE = file.read()
 
+
+assistant = client.beta.assistants.create(
+    name="Research Assistant",
+    instructions="Write code to help with research tasks.",
+    tools=[{"type": "code_interpreter"}],
+    model="gpt-4o-mini",
+)
+
+# Create a thread
+
+# STREAMLIT APP
 st.write("# Research Assistant Chat")
 
 # Set a default model
 if "openai_model" not in st.session_state:
-    st.session_state["openai_model"] = "gpt-4o"
+    st.session_state["openai_model"] = "gpt-4o-mini"
 # Initialize session state storage to store chat history and files
 if "messages" not in st.session_state:
     st.session_state["messages"] = []
