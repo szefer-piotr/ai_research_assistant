@@ -26,6 +26,8 @@ assistant = client.beta.assistants.create(
     model="gpt-4o-mini",
 )
 
+# https://github.com/gabrielchua/dave
+
 # Create a thread
 
 # STREAMLIT APP
@@ -39,21 +41,29 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = []
 if "uploaded_files" not in st.session_state:
     st.session_state["uploaded_files"] = []
+if "thread_id" not in st.session_state:
+    thread = client.beta.threads.create()
+    st.session_state["thread_id"] = thread.id
+    print(st.session_state["thread_id"])
 
-# Using object notation
+
+
+
+# Select a GPT model
 # add_selectbox = st.sidebar.selectbox(
 #     "Select LLM model.",
 #     ("4o", "o1", "o3-mini")
 # )
 
-# # Using "with" notation
+# Add work mode
 # with st.sidebar:
 #     add_radio = st.radio(
 #         "Chose a work mode.",
 #         ("Refinig hypotheses", "Running analyses", "Writing results")
 #     )
 
-for message in st.session_state.messages:
+# Display previous messages
+for message in st.session_state["messages"]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
@@ -66,13 +76,50 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(prompt.text)
+    
     # If files are uploaded
     if prompt.files:
         for file in prompt.files:
+            # Append the file to the session state.
             st.session_state["uploaded_files"].append(file)
+            # Display a message that a file was recieved.
             st.session_state["messages"].append({"role": "assistant", "content": f"Received file: {file.name}"})
+            
+            # Initiate the file id stroage in session state
+            st.session_state["file_id"] = []
+
+            # Process each file, add files to openai and store the file id in the session state
+            for file in st.session_state["uploaded_files"]:
+                openai_file = client.files.create(
+                    file=file,
+                    purpose='assistants'
+                )
+                st.session_state["file_id"].append(openai_file.id)
+                print(f"Uploaded new file: \t {openai_file.id}")
+
             with st.chat_message("assistant"):
+                print(st.session_state["uploaded_files"][0])
                 st.write(f"Received file: {file.name}")
+
+        # Update the assitants' thread with uploaded file
+        client.beta.threads.update(
+            thread_id=st.session_state["thread_id"],
+            tool_resources={"code_interpreter": {"file_ids": [file_id for file_id in st.session_state.file_id]}
+                            }
+            )
+        print(f"[INFO] {client.beta.threads}")
+
+        # Engege the assistant into the response
+
+    # Display downloaded files
+    with st.sidebar:
+        st.write("## Uploaded Files")
+        if st.session_state["uploaded_files"]:
+            for i, file_obj in enumerate(st.session_state["uploaded_files"], start=1):
+                st.write(f"{i}. {file_obj.name}")
+        else:
+            st.write("No files uploaded yet.")
+
 
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
@@ -93,11 +140,3 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
         )
         response = st.write_stream(stream)
     st.session_state.messages.append({"role": "assistant", "content": response})
-
-    with st.sidebar:
-        st.write("## Uploaded Files")
-        if st.session_state["uploaded_files"]:
-            for i, file_obj in enumerate(st.session_state["uploaded_files"], start=1):
-                st.write(f"{i}. {file_obj.name}")
-        else:
-            st.write("No files uploaded yet.")
