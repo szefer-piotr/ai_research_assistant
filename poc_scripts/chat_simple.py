@@ -18,12 +18,16 @@ developer_filename = "prompts/plan-generation-developer-message.txt"
 with open(developer_filename, "r", encoding="utf-8") as file:
     DEVELOPER_MESSAGE = file.read()
 
+executor_filename = "prompts/plan-generation-executor.txt"
+with open(executor_filename, "r", encoding="utf-8") as file:
+    EXECUTOR_MESSAGE = file.read()
+
 
 assistant = client.beta.assistants.create(
     name="Research Assistant",
-    instructions="Write code to help with research tasks.",
+    instructions=EXECUTOR_MESSAGE,
     tools=[{"type": "code_interpreter"}],
-    model="gpt-4o-mini",
+    model="gpt-4o",
 )
 
 # https://github.com/gabrielchua/dave
@@ -73,10 +77,18 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
     
     # Add user message to chat history
     st.session_state["messages"].append({"role": "user", "content": prompt.text})
+    
     # Display user message in chat message container
     with st.chat_message("user"):
         st.markdown(prompt.text)
-    
+
+    # Add user messages to the thread?
+    message = client.beta.threads.messages.create(
+        thread_id=st.session_state["thread_id"],
+        role="user",
+        content=prompt.text
+    )
+
     # If files are uploaded
     if prompt.files:
         for file in prompt.files:
@@ -109,7 +121,7 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             )
         print(f"[INFO] {client.beta.threads}")
 
-        # Engege the assistant into the response
+        # How about the message history???
 
     # Display downloaded files
     with st.sidebar:
@@ -123,6 +135,16 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
 
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
+
+        # Create a run for the assistant. Assistant will optionally use a tool?
+        # stream = client.beta.threads.runs.create(
+        #     thread_id=st.session_state["thread_id"],
+        #     assistant_id=assistant.id,
+        #     tool_choice={"type": "code_interpreter"},
+        #     stream=True
+        # )
+        
+        # Previous stream
         stream = client.chat.completions.create(
             model=st.session_state["openai_model"],
             messages=[
@@ -138,5 +160,6 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             ],
             stream=True
         )
+
         response = st.write_stream(stream)
     st.session_state.messages.append({"role": "assistant", "content": response})
