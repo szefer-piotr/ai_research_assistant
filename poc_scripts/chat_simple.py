@@ -30,9 +30,7 @@ assistant = client.beta.assistants.create(
     model="gpt-4o",
 )
 
-# https://github.com/gabrielchua/dave
 
-# Create a thread
 
 # STREAMLIT APP
 st.write("# Research Assistant Chat")
@@ -48,7 +46,7 @@ if "uploaded_files" not in st.session_state:
 if "thread_id" not in st.session_state:
     thread = client.beta.threads.create()
     st.session_state["thread_id"] = thread.id
-    print(st.session_state["thread_id"])
+    print(f"Created a thread: {st.session_state['thread_id']}")
 
 
 
@@ -82,15 +80,19 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
     with st.chat_message("user"):
         st.markdown(prompt.text)
 
+    print("[INFO] ... ")
+
     # Add user messages to the thread?
-    message = client.beta.threads.messages.create(
-        thread_id=st.session_state["thread_id"],
-        role="user",
-        content=prompt.text
-    )
+    if (text := prompt.text):
+        message = client.beta.threads.messages.create(
+            thread_id=st.session_state["thread_id"],
+            role="user",
+            content=text
+        )
 
     # If files are uploaded
     if prompt.files:
+        print("[INFO] Process added files.")
         for file in prompt.files:
             # Append the file to the session state.
             st.session_state["uploaded_files"].append(file)
@@ -99,15 +101,19 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             
             # Initiate the file id stroage in session state
             st.session_state["file_id"] = []
+            
+            print("[INFO] Load files into the session state  ")
 
             # Process each file, add files to openai and store the file id in the session state
-            for file in st.session_state["uploaded_files"]:
-                openai_file = client.files.create(
-                    file=file,
-                    purpose='assistants'
+            openai_file = client.files.create(
+                file=file,
+                purpose='assistants'
                 )
-                st.session_state["file_id"].append(openai_file.id)
-                print(f"Uploaded new file: \t {openai_file.id}")
+            
+            print("[INFO] Add to OpenAI client files")
+            
+            st.session_state["file_id"].append(openai_file.id)
+            print(f"Uploaded new file: \t {openai_file.id}")
 
             with st.chat_message("assistant"):
                 print(st.session_state["uploaded_files"][0])
@@ -156,7 +162,7 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
                     "role": m["role"], 
                     "content": m["content"]
                 }
-                for m in st.session_state.messages)
+                for m in st.session_state["messages"])
             ],
             stream=True
         )
