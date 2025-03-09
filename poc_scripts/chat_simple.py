@@ -87,6 +87,26 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
         with st.chat_message("user"):
             st.markdown(prompt.text)
 
+        # Previous stream
+        with st.chat_message("assistant"):
+            stream = client.chat.completions.create(
+                model=st.session_state["openai_model"],
+                messages=[
+                    {
+                        "role": "developer", 
+                        "content": DEVELOPER_MESSAGE
+                        },
+                    *({
+                        "role": m["role"], 
+                        "content": m["content"]
+                    }
+                    for m in st.session_state["messages"])
+                ],
+                stream=True
+            )
+            
+            response = st.write_stream(stream)
+
     # If files are uploaded
     if prompt.files:
         print("[INFO] Process added files.")
@@ -97,7 +117,6 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             # Display a message that a file was recieved.
             print("******************************SHIT")
             st.session_state["messages"].append({"role": "user", "content": f"I have uploaded a file: {file.name}"})
-            # st.session_state["messages"].append({"role": "assistant", "content": f"Received file: {file.name}"})
             
             # Initiate the file id storage in session state
             st.session_state["file_id"] = []
@@ -114,10 +133,6 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             
             st.session_state["file_id"].append(openai_file.id)
             print(f"Uploaded new file: \t {openai_file.id}")
-
-            # with st.chat_message("assistant"):
-            #     print(st.session_state["uploaded_files"][0])
-            #     st.write(f"Received file: {file.name}")
             
             with st.chat_message("user"):
                 # print(st.session_state["uploaded_files"][0])
@@ -141,35 +156,18 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             else:
                 st.write("No files uploaded yet.")
 
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
 
+            # Create a run for the assistant. Assistant will optionally use a tool?
+            stream = client.beta.threads.runs.create(
+                thread_id=st.session_state["thread_id"],
+                assistant_id=assistant.id,
+                tool_choice={"type": "code_interpreter"},
+                stream=True
+            )
 
-    # Display assistant response in chat message container
-    with st.chat_message("assistant"):
+            # Build an event handler.
+            response = st.write_stream(stream)
 
-        # Create a run for the assistant. Assistant will optionally use a tool?
-        # stream = client.beta.threads.runs.create(
-        #     thread_id=st.session_state["thread_id"],
-        #     assistant_id=assistant.id,
-        #     tool_choice={"type": "code_interpreter"},
-        #     stream=True
-        # )
-        
-        # Previous stream
-        stream = client.chat.completions.create(
-            model=st.session_state["openai_model"],
-            messages=[
-                {
-                    "role": "developer", 
-                    "content": DEVELOPER_MESSAGE
-                    },
-                *({
-                    "role": m["role"], 
-                    "content": m["content"]
-                }
-                for m in st.session_state["messages"])
-            ],
-            stream=True
-        )
-
-        response = st.write_stream(stream)
     st.session_state.messages.append({"role": "assistant", "content": response})
