@@ -73,11 +73,29 @@ if prompt := st.chat_input(
         st.session_state.thread_id = thread.id
         print(st.session_state.thread_id)
 
+    if prompt.text:
+        print(prompt.text)
+
+
+    if prompt.files:
+        # Because we have multiple files possibly uploaded we loop throug each one
+        for file in prompt.files:
+            st.session_state.messages.append({"role": "user", "content": f"I have uploaded a file: {file.name}"})
+            # Add file uploader
+            openai_file = client.files.create(
+                    file=file,
+                    purpose='assistants'
+                    )
+            # Update a thread with each file
+            client.beta.threads.update(
+                thread_id=st.session_state.thread_id,
+                tool_resources={"code_interpreter": {"file_ids": openai_file.id}}
+                )
     # Prompt can have text or it can be a file.
 
     # If it is text add it to the
 
     # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "contente": prompt})
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
 # question = text_box.text_area("Ask a question", disabled=st.session_state.disabled)
