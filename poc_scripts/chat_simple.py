@@ -2,6 +2,9 @@ import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
+from typing_extensions import override
+from openai import AssistantEventHandler
+# from utils import EventHandler
 
 # https://tsjohnnychan.medium.com/a-chatgpt-app-with-streamlit-advanced-version-32b4d4a993fb
 
@@ -29,7 +32,33 @@ assistant = client.beta.assistants.create(
     model="gpt-4o",
 )
 
-
+class EventHandler(AssistantEventHandler):    
+  @override
+  def on_text_created(self, text) -> None:
+    st.session_state["messages"].append({"role": "assistant", "content": text})
+    print(f"\nassistant > ", end="", flush=True)
+      
+  @override
+  def on_text_delta(self, delta, snapshot):
+    st.session_state["messages"].append({"role": "assistant", "content": text})
+    print(delta.value, end="", flush=True)
+      
+  def on_tool_call_created(self, tool_call):
+    st.session_state["messages"].append({"role": "assistant", "content": tool_call})
+    print(f"\nassistant > {tool_call.type}\n", flush=True)
+    
+  
+  def on_tool_call_delta(self, delta, snapshot):
+    if delta.type == 'code_interpreter':
+      if delta.code_interpreter.input:
+        st.session_state["messages"].append({"role": "assistant", "content": delta.code_interpreter.input})
+        print(delta.code_interpreter.input, end="", flush=True)
+      if delta.code_interpreter.outputs:
+        st.session_state["messages"].append({"role": "assistant", "content": delta.code_interpreter.outputs})
+        print(f"\n\noutput >", flush=True)
+        for output in delta.code_interpreter.outputs:
+          if output.type == "logs":
+            print(f"\n{output.logs}", flush=True)
 
 # STREAMLIT APP
 st.write("# Research Assistant Chat")
@@ -109,7 +138,6 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
 
     # If files are uploaded
     if prompt.files:
-        print("[INFO] Process added files.")
         for file in prompt.files:
             # Append the file to the session state.
             st.session_state["uploaded_files"].append(file)
@@ -129,13 +157,9 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
                 purpose='assistants'
                 )
             
-            print("[INFO] Add to OpenAI client files")
-            
             st.session_state["file_id"].append(openai_file.id)
-            print(f"Uploaded new file: \t {openai_file.id}")
             
             with st.chat_message("user"):
-                # print(st.session_state["uploaded_files"][0])
                 st.write(f"I have uploaded a file: {file.name}")
 
         # Update the assitants' thread with uploaded file
@@ -159,15 +183,25 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
         # Display assistant response in chat message container
         with st.chat_message("assistant"):
 
-            # Create a run for the assistant. Assistant will optionally use a tool?
-            stream = client.beta.threads.runs.create(
+            with client.beta.threads.runs.stream(
                 thread_id=st.session_state["thread_id"],
                 assistant_id=assistant.id,
-                tool_choice={"type": "code_interpreter"},
-                stream=True
-            )
+                instructions=EXECUTOR_MESSAGE,
+                event_handler=EventHandler(),
+            ) as stream:
+                # st.write_stream(stream) # This writes all events into the console
+                stream.until_done()
+            
+            #----------------------------------------------------------------------
+            # # Create a run for the assistant. Assistant will optionally use a tool?
+            # stream = client.beta.threads.runs.create(
+            #     thread_id=st.session_state["thread_id"],
+            #     assistant_id=assistant.id,
+            #     tool_choice={"type": "code_interpreter"},
+            #     stream=True
+            # )
 
-            # Build an event handler.
+            # # Build an event handler.
             response = st.write_stream(stream)
-
-    st.session_state.messages.append({"role": "assistant", "content": response})
+            #----------------------------------------------------------------------
+            st.session_state.messages.append({"role": "assistant", "content": response})
