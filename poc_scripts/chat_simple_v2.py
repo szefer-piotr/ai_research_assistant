@@ -60,4 +60,24 @@ for message in st.session_state["messages"]:
 text_box = st.empty()
 qn_btn = st.empty()
 
-question = text_box.text_area("Ask a question", disabled=st.session_state.disabled)
+if prompt := st.chat_input(
+    "Upload csv or txt...", 
+    accept_file="multiple", 
+    file_type=["csv", "txt"]
+    ):
+
+    # Create a new thread and add its id to the session state
+    # Create a new thread
+    if "thread_id" not in st.session_state:
+        thread = client.beta.threads.create()
+        st.session_state.thread_id = thread.id
+        print(st.session_state.thread_id)
+
+    # Prompt can have text or it can be a file.
+
+    # If it is text add it to the
+
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "contente": prompt})
+
+# question = text_box.text_area("Ask a question", disabled=st.session_state.disabled)
