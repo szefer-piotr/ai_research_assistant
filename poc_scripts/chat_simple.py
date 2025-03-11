@@ -143,7 +143,7 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
             st.session_state["uploaded_files"].append(file)
             
             # Display a message that a file was recieved.
-            print("******************************SHIT")
+            # print("******************************SHIT")
             st.session_state["messages"].append({"role": "user", "content": f"I have uploaded a file: {file.name}"})
             
             # Initiate the file id storage in session state
@@ -189,7 +189,7 @@ if prompt := st.chat_input("Upload your data and hypotheses so we can start work
                 instructions=EXECUTOR_MESSAGE,
                 event_handler=EventHandler(),
             ) as stream:
-                # st.write_stream(stream) # This writes all events into the console
+                st.write_stream(stream.text_deltas) # This writes all events into the console
                 stream.until_done()
             
             #----------------------------------------------------------------------
