@@ -31,7 +31,11 @@ st.set_page_config(page_title="Research Assistant",
 # Initialise session state variables
 
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "What you would like to work on today?"}]
+    st.session_state["messages"] = [{"role": "user",
+                                        "items": [
+                                            {"type": "text", 
+                                            "content": "What you would like to work on today?"
+                                            }]}]
 
 if "file_uploaded" not in st.session_state:
     st.session_state.file_uploaded = False
@@ -58,9 +62,9 @@ if "disabled" not in st.session_state:
 st.subheader("🔮 Research Assistant")
 
 # Display previous messages
-for message in st.session_state["messages"]:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# for message in st.session_state["messages"]:
+#     with st.chat_message(message["role"]):
+#         st.markdown(message["content"])
 
 file_upload_box = st.empty()
 upload_btn = st.empty()
@@ -81,13 +85,14 @@ if not st.session_state["file_uploaded"]:
             )
             st.session_state["file_id"].append(oai_file.id)
             print(f"Uploaded new file: \t {oai_file.id}")
-        st.toast("File(s) uploaded successfully", icon=":rocket:")
+        st.toast("File(s) uploaded successfully")
         st.session_state["file_uploaded"] = True
         file_upload_box.empty()
         st.rerun()
 
         
 if st.session_state["file_uploaded"]:
+    print(f"FILE UPLADED")
     if "thread_id" not in st.session_state:
         thread = client.beta.threads.create()
         st.session_state.thread_id = thread.id
@@ -95,7 +100,7 @@ if st.session_state["file_uploaded"]:
     
     client.beta.threads.update(
         thread_id=st.session_state.thread_id,
-        tool_resources=[{"code_interpreter": {"file_id" for file_id in st.session_state.file_id}}]
+        tool_resources={"code_interpreter": {"file_ids": [file_id for file_id in st.session_state.file_id]}}
     )
 
     # if "messages" not in st.session_state:
@@ -103,9 +108,12 @@ if st.session_state["file_uploaded"]:
 
     #UI
     for message in st.session_state.messages:
+        print(f"The message: {message}")
         with st.chat_message(message["role"]):
             for item in message["items"]:
                 item_type = item["type"]
+                if item_type == "text":
+                    st.markdown(item["content"])
 
 if prompt := st.chat_input(
     "Upload csv or txt...", 
@@ -127,11 +135,13 @@ if prompt := st.chat_input(
         # Because we have multiple files possibly uploaded we loop throug each one
         for file in prompt.files:
             st.session_state.messages.append({"role": "user", "content": f"I have uploaded a file: {file.name}"})
-            # Add file uploader
+            
+            # Add uploaded file to openai files
             openai_file = client.files.create(
                     file=file,
                     purpose='assistants'
                     )
+            
             # Update a thread with each file
             client.beta.threads.update(
                 thread_id=st.session_state.thread_id,
@@ -143,6 +153,6 @@ if prompt := st.chat_input(
     # If it is text add it to the
 
     # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # st.session_state.messages.append({"role": "user", "content": prompt})
 
 # question = text_box.text_area("Ask a question", disabled=st.session_state.disabled)
