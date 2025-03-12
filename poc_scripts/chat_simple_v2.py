@@ -5,6 +5,13 @@ import os
 
 from prompts import DEVELOPER_MESSAGE, EXECUTOR_MESSAGE
 # from assistants import assistant
+from openai.types.beta.assistant_stream_event import (
+    ThreadRunStepCreated,
+    ThreadRunStepDelta,
+    ThreadRunStepCompleted,
+    ThreadMessageCreated,
+    ThreadMessageDelta
+)
 
 load_dotenv()
 
@@ -31,7 +38,7 @@ st.set_page_config(page_title="Research Assistant",
 # Initialise session state variables
 
 if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "user",
+    st.session_state["messages"] = [{"role": "assistant",
                                         "items": [
                                             {"type": "text", 
                                             "content": "What you would like to work on today?"
@@ -114,45 +121,60 @@ if st.session_state["file_uploaded"]:
                 item_type = item["type"]
                 if item_type == "text":
                     st.markdown(item["content"])
+                elif item_type == "image":
+                    for image in item["content"]:
+                        st.html(image)
+                elif item_type == "code_input":
+                    with st.status("Code", state="complete"):
+                        st.code(item["content"])
+                elif item_type == "code_output":
+                    with st.status("Results", state="complete"):
+                        st.code(item["content"])
 
-if prompt := st.chat_input(
-    "Upload csv or txt...", 
-    accept_file="multiple", 
-    file_type=["csv", "txt"]
-    ):
+    if prompt := st.chat_input(
+        "Ask a question or upload your hypotheses...", 
+        accept_file="multiple", 
+        file_type=["csv", "txt"]
+        ):
 
-    # Create a new thread and add its id to the session state
-    if "thread_id" not in st.session_state:
-        thread = client.beta.threads.create()
-        st.session_state.thread_id = thread.id
-        print(st.session_state.thread_id)
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "items": [
+                    {"type": "text",
+                     "content": prompt.text}
+                ]
+            }    
+        )
 
-    if prompt.text:
-        print(prompt.text)
+        client.beta.threads.messages.create(
+            thread_id=st.session_state.thread_id,
+            role="user",
+            content=prompt.text
+        )
 
+        with st.chat_message("user"):
+            st.markdown(prompt.text)
 
-    if prompt.files:
-        # Because we have multiple files possibly uploaded we loop throug each one
-        for file in prompt.files:
-            st.session_state.messages.append({"role": "user", "content": f"I have uploaded a file: {file.name}"})
-            
-            # Add uploaded file to openai files
-            openai_file = client.files.create(
-                    file=file,
-                    purpose='assistants'
-                    )
-            
-            # Update a thread with each file
-            client.beta.threads.update(
+        with st.chat_message("assistant"):
+            stream = client.beta.threads.runs.create(
                 thread_id=st.session_state.thread_id,
-                tool_resources={"code_interpreter": {"file_ids": openai_file.id}}
-                )
-    # Prompt can have text or it can be a file.
-    # if prompt.text
+                assistant_id=assistant.id,
+                tool_choice={"type": "code_interpreter"},
+                stream=True
+            )
 
-    # If it is text add it to the
+            assistant_output = []
 
-    # Add user message to chat history
-    # st.session_state.messages.append({"role": "user", "content": prompt})
-
-# question = text_box.text_area("Ask a question", disabled=st.session_state.disabled)
+            # for event in stream:
+            #     print(event)
+            #     if isinstance(event, ThreadRunStepCreated):
+            #         if event.delta.step_details.type == "tool_calls":
+            #             assistant_output.append(
+            #                 {
+            #                     "type": "code_input",
+            #                     "content": ""
+            #                 }
+            #             )
+            #             code_input_expander = st.status("Writing code ...", expanded=True)
+            #             code_input_block = code_input_expander.empty()
