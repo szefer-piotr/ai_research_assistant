@@ -193,6 +193,7 @@ if st.session_state["file_uploaded"]:
                     if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
                         code_interpreter = event.data.delta.step_details.tool_calls[0].code_interpreter
                         code_input_delta = code_interpreter.input
+                        print(f"[INFO] Code input delta: {code_input_delta}")
                         if (code_input_delta is not None) and (code_input_delta != ""):
                             assistant_output[-1]["content"] += code_input_delta
                             code_input_block.empty()
@@ -200,13 +201,15 @@ if st.session_state["file_uploaded"]:
 
                 elif isinstance(event, ThreadRunStepCompleted):
                     if isinstance(event.data.step_details, ToolCallsStepDetails):
-                        # print(event.data.step_details.tool_calls)
+                        print(f"[INFO] Event data step details: {event.data.step_details.tool_calls}")
                         code_interpreter = event.data.step_details.tool_calls[0].code_interpreter
                         print(f"[INFO] Code interpreter:\n {code_interpreter.outputs}")
+                        
                         if code_interpreter.outputs:
                             code_interpreter_outputs = code_interpreter.outputs[0]
                             print(f"[INFO] Code interpreter outputs:\n {code_interpreter_outputs}")
                             code_input_expander.update(label="Code", state="complete", expanded=False)
+                            
                             # Image
                             if isinstance(code_interpreter_outputs, CodeInterpreterOutputImage):
                                 image_html_list = []
@@ -236,7 +239,20 @@ if st.session_state["file_uploaded"]:
                             elif isinstance(code_interpreter_outputs, CodeInterpreterOutputLogs):
                                 assistant_output.append({"type": "code_input",
                                                          "content": ""})
-                                code_output = code_interpreter.outputs[0].log
+                                code_output = code_interpreter.outputs[0].logs
                                 with st.status("Results", state="complete"):
                                     st.code(code_output)
                                     assistant_output[-1]["content"] = code_output
+                
+                elif isinstance(event, ThreadMessageCreated):
+                    assistant_output.append({"type": "text",
+                                             "content": ""})
+                    assistant_text_box = st.empty()
+
+                elif isinstance(event, ThreadMessageDelta):
+                    if isinstance(event.data.delta.content[0], TextDeltaBlock):
+                        assistant_text_box.empty()
+                        assistant_output[-1]["content"] += event.data.delta.content[0].text.value
+                        assistant_text_box.markdown(assistant_output[-1]["content"])
+
+            st.session_state.messages.append({"role": "assistant", "items": assistant_output})
