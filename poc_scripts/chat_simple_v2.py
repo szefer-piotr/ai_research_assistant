@@ -2,6 +2,7 @@ import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
+import base64
 
 from prompts import DEVELOPER_MESSAGE, EXECUTOR_MESSAGE
 # from assistants import assistant
@@ -12,6 +13,13 @@ from openai.types.beta.assistant_stream_event import (
     ThreadMessageCreated,
     ThreadMessageDelta
 )
+
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
+from openai.types.beta.threads.runs.tool_calls_step_details import ToolCallsStepDetails
+from openai.types.beta.threads.runs.code_interpreter_tool_call import (
+    CodeInterpreterOutputImage,
+    CodeInterpreterOutputLogs
+    )
 
 load_dotenv()
 
@@ -153,10 +161,13 @@ if st.session_state["file_uploaded"]:
             content=prompt.text
         )
 
+        # Chat message container for the user
         with st.chat_message("user"):
             st.markdown(prompt.text)
 
+        # Chat message container for the assistant
         with st.chat_message("assistant"):
+            # First create an assistant
             stream = client.beta.threads.runs.create(
                 thread_id=st.session_state.thread_id,
                 assistant_id=assistant.id,
@@ -164,17 +175,68 @@ if st.session_state["file_uploaded"]:
                 stream=True
             )
 
+            # Initialize a list of outputs
             assistant_output = []
+            
+            # Handle events in the stream
+            for event in stream:
+                print(f"[INFO] Event:\n {type(event)}")
+                if isinstance(event, ThreadRunStepCreated):
+                    if event.data.step_details.type == "tool_calls":
+                        assistant_output.append({"type": "code_input",
+                                                 "content": ""})
+                        
+                        code_input_expander = st.status("Writing code ...", expanded=True)
+                        code_input_block = code_input_expander.empty()
 
-            # for event in stream:
-            #     print(event)
-            #     if isinstance(event, ThreadRunStepCreated):
-            #         if event.delta.step_details.type == "tool_calls":
-            #             assistant_output.append(
-            #                 {
-            #                     "type": "code_input",
-            #                     "content": ""
-            #                 }
-            #             )
-            #             code_input_expander = st.status("Writing code ...", expanded=True)
-            #             code_input_block = code_input_expander.empty()
+                if isinstance(event, ThreadRunStepDelta):
+                    if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
+                        code_interpreter = event.data.delta.step_details.tool_calls[0].code_interpreter
+                        code_input_delta = code_interpreter.input
+                        if (code_input_delta is not None) and (code_input_delta != ""):
+                            assistant_output[-1]["content"] += code_input_delta
+                            code_input_block.empty()
+                            code_input_block.code(assistant_output[-1]["content"])
+
+                elif isinstance(event, ThreadRunStepCompleted):
+                    if isinstance(event.data.step_details, ToolCallsStepDetails):
+                        # print(event.data.step_details.tool_calls)
+                        code_interpreter = event.data.step_details.tool_calls[0].code_interpreter
+                        print(f"[INFO] Code interpreter:\n {code_interpreter.outputs}")
+                        if code_interpreter.outputs:
+                            code_interpreter_outputs = code_interpreter.outputs[0]
+                            print(f"[INFO] Code interpreter outputs:\n {code_interpreter_outputs}")
+                            code_input_expander.update(label="Code", state="complete", expanded=False)
+                            # Image
+                            if isinstance(code_interpreter_outputs, CodeInterpreterOutputImage):
+                                image_html_list = []
+                                for output in code_interpreter.outputs:
+                                    image_file_id = output.image.file_id
+                                    image_data = client.files.content(image_file_id)
+
+                                    image_data_bytes = image_data.read()
+
+                                    with open(f"images/{image_file_id}.png", "rb") as fle:
+                                        file.write(image_data_bytes)
+                                    
+                                    file_ = open(f"images/{image_file_id}.png", "rb")
+                                    contents = file_.read()
+                                    data_url = base64.b64encode(contents).decode("utf-8")
+                                    file_.close()
+
+                                    # Display image
+                                    image_html = f'<p align="center"><img src="data:image/png;base64,{data_url}" width=600></p>'
+                                    st.html(image_html)
+
+                                    image_html_list.append(image_html)
+                                
+                                assistant_output.append({"type": "image",
+                                                         "content": image_html_list})
+                                
+                            elif isinstance(code_interpreter_outputs, CodeInterpreterOutputLogs):
+                                assistant_output.append({"type": "code_input",
+                                                         "content": ""})
+                                code_output = code_interpreter.outputs[0].log
+                                with st.status("Results", state="complete"):
+                                    st.code(code_output)
+                                    assistant_output[-1]["content"] = code_output
