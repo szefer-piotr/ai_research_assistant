@@ -1,4 +1,4 @@
-# The AI-Powered Research Assistant (APRA)
+# The AI-Powered Research Assistant
 
 An AI-driven workspace designed to assist researchers in analyzing data, writing, and organizing their work effectively.
 
