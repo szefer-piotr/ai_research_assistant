@@ -10,6 +10,14 @@ Over my ten years of experience as a scientist, I have encountered numerous chal
 
 Another key challenge is the difficulty in comparing results due to varying scales and mixed concepts. With the exponential growth of published research, finding and synthesizing relevant information has become increasingly complex. However, with the centralization of ecological data in repositories like DRYAD, there is an opportunity to harness AI to integrate this knowledge. The ultimate goal is to build a unified framework that enhances research focus and advances ecological understanding.
 
+# How to run
+
+This is a Stremalit chat app that uses the OpenAI's assistant code interpreter.
+
+```
+streamlit run poc_scripts.py
+```
+
 ## Planned Features
 
 I aim to implement the following features in APRA:
