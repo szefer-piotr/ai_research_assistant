@@ -28,9 +28,6 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 # Set up OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
-# Create an assistant
-client = OpenAI(api_key=openai_api_key)
-
 assistant = client.beta.assistants.create(
     name="Research Assistant",
     instructions=EXECUTOR_MESSAGE,
@@ -85,6 +82,7 @@ file_upload_box = st.empty()
 upload_btn = st.empty()
 
 if not st.session_state["file_uploaded"]:
+    
     st.session_state["files"] = file_upload_box.file_uploader(
         "Upload your dataset(s) and hypotheses...",
         accept_multiple_files=True,
@@ -105,9 +103,11 @@ if not st.session_state["file_uploaded"]:
         file_upload_box.empty()
         st.rerun()
 
+    # Even if the file is not uploaded alllow for a conversation with an AI.
         
 if st.session_state["file_uploaded"]:
     print(f"FILE UPLADED")
+    
     if "thread_id" not in st.session_state:
         thread = client.beta.threads.create()
         st.session_state.thread_id = thread.id
@@ -210,53 +210,37 @@ if st.session_state["file_uploaded"]:
                         
                         code_input_expander.update(label="Code", state="complete", expanded=False)
 
-                        if code_interpreter.outputs:
-                            print(f"[INFO] Code interpreter outputs:\n {code_interpreter.outputs}")
-                            code_interpreter_outputs = code_interpreter.outputs[0]
-                            
-                            # Image
-                            if isinstance(code_interpreter_outputs, CodeInterpreterOutputImage):
-                                print(f"[INFO] Client file list: {client.files.list()}")
-                                image_html_list = []
-                                for output in code_interpreter.outputs:
-                                    print("***"*10)
-                                    image_file_id = output.image.file_id
-                                    print(f"[INFO] Image output: {output.image}")
-                                    image_data = client.files.content(image_file_id)
-                                    
-                                    image_data_bytes = image_data.read()
+                        print(f"[INFO] Code interpreter outputs:\n {code_interpreter.outputs}")
+                        
+                        for output in code_interpreter.outputs:
 
-                                    print(f"[INFO] Image data:\n{image_data}")
-                                    print("***"*10)
-                                    
-                                    st.image(image_data_bytes)
-                                    # print(f"[INFO] Image data bytes:\n{image_data_bytes}")
+                            print(f"[INFO] Type of an element {type(output)}")
 
-                                #     with open(f"/mnt/images/{image_file_id}.png", "rb") as file:
-                                #         file.write(image_data_bytes)
-                                #     file_ = open(f"/mnt/images/{image_file_id}.png", "rb")
+                            image_html_list = []
 
-                                #     with open(f"images/{image_file_id}.png", "rb") as file:
-                                #         file.write(image_data_bytes)
-                                #     file_ = open(f"images/{image_file_id}.png", "rb")
-                                    
-                                #     contents = file_.read()
-                                #     data_url = base64.b64encode(contents).decode("utf-8")
-                                #     file_.close()
+                            if isinstance(output, CodeInterpreterOutputImage):
 
-                                #     # Display image
-                                #     image_html = f'<p align="center"><img src="data:image/png;base64,{data_url}" width=600></p>'
-                                #     st.html(image_html)
+                                # Can it produce multiple images?
 
-                                #     image_html_list.append(image_html)
+                                # print(f"[INFO] This is an image. Add to the client file list: {client.files.list()}")
+                                print("***"*10)
+                                print(f"[INFO] Image output: {output}")
+
+                                image_file_id = output.image.file_id                                   
+                                image_data = client.files.content(image_file_id)
                                 
-                                # assistant_output.append({"type": "image",
-                                #                          "content": image_html_list})
+                                image_data_bytes = image_data.read()
+
+                                print(f"[INFO] Image data:\n{image_data}")
+                                print("***"*10)
                                 
-                            elif isinstance(code_interpreter_outputs, CodeInterpreterOutputLogs):
+                                st.image(image_data_bytes)
+                                
+                            if isinstance(output, CodeInterpreterOutputLogs):
+                                # print(f"[INFO] This is a log. Show it in the code window.")
                                 assistant_output.append({"type": "code_input",
                                                          "content": ""})
-                                code_output = code_interpreter.outputs[0].logs
+                                code_output = output.logs
                                 with st.status("Results", state="complete"):
                                     st.code(code_output)
                                     assistant_output[-1]["content"] = code_output
