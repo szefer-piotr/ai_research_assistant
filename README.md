@@ -12,10 +12,21 @@ Another key challenge is the difficulty in comparing results due to varying scal
 
 # How to run
 
-This is a Stremalit chat app that uses the OpenAI's assistant code interpreter.
+This is a Stremalit (v.1.43) chat app that uses the OpenAI's assistant code interpreter.
 
+Create a new environment
 ```
-streamlit run poc_scripts.py
+python -m venv venv
+```
+
+Install all dependencies.
+```
+pip install -r requirements.txt
+```
+
+Run the app in browser.
+```
+streamlit run poc_scripts/chat_simple_v3.py
 ```
 
 ## Planned Features
