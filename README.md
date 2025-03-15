@@ -29,6 +29,11 @@ Run the app in browser.
 streamlit run poc_scripts/chat_simple_v3.py
 ```
 
+## Current Features
+
+- Upload your data and perform analyses by simply chatting with the assistant.
+- Create visalizations.
+
 ## Planned Features
 
 I aim to implement the following features in APRA:
