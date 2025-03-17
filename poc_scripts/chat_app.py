@@ -64,7 +64,11 @@ if "code_output" not in st.session_state:
 if "disabled" not in st.session_state:
     st.session_state.disabled = False
 
+if "files" not in st.session_state:
+    st.session_state.files = []
 
+if "file_id" not in st.session_state:
+    st.session_state.file_id = []
 # That does anything by itself. Initializes a text box and a button.
 # text_box = st.empty()
 # qn_btn = st.empty()
@@ -73,234 +77,225 @@ if "disabled" not in st.session_state:
 #UI
 st.subheader("🔮 Research Assistant")
 
-# Display previous messages
-# for message in st.session_state["messages"]:
-#     with st.chat_message(message["role"]):
-#         st.markdown(message["content"])
+# Handle the whole file uploading logic here
+st.sidebar.title("Uploaded Files")
 
-file_upload_box = st.empty()
-upload_btn = st.empty()
+# Upload box
+uploaded_file = st.sidebar.file_uploader("**Upload your dataset(s) and hypotheses...**", type=["csv", "xlsx"])
 
-if not st.session_state["file_uploaded"]:
-    
-    st.session_state["files"] = file_upload_box.file_uploader(
-        "Upload your dataset(s) and hypotheses...",
-        accept_multiple_files=True,
-        type=['csv','txt']
-    )
+# Add an upload button below the upload box
+upload_btn = st.sidebar.button("Upload")
 
-    if upload_btn.button("Upload"):
-        st.session_state["file_id"] = []
-        for file in st.session_state["files"]:
-            oai_file = client.files.create(
-                file=file,
-                purpose="assistants"
-            )
-            st.session_state["file_id"].append(oai_file.id)
-            print(f"Uploaded new file: \t {oai_file.id}")
+
+
+if uploaded_file in None:
+    if upload_btn:
+        st.warning("No files were selected!")
+    st.rerun()
+
+elif uploaded_file is not None:
+    print(f"Uploaded file name: {uploaded_file.name}")
+    st.stop("Just wanted to see the file name. Bye!")
+    st.session_state["files"].append(uploaded_file)
+    if upload_btn:
         st.toast("File(s) uploaded successfully")
         st.session_state["file_uploaded"] = True
-        file_upload_box.empty()
-        st.rerun()
 
-    # Even if the file is not uploaded alllow for a conversation with an AI.
-    # if prompt := st.chat_input("Upload your data and hypotheses so we can start working on your analyses.", accept_file="multiple", 
-    #                        file_type=["csv", "txt"]):
-    
-    # # Add user message to chat history
-    # st.session_state["messages"].append({"role": "user", "content": prompt.text})
-    
-    # print("[INFO] ... ")
+    # This part may have to be started when user specifies which file to use.
+    for file in st.session_state["files"]:
+        oai_file = client.files.create(
+            file=file,
+            purpose="assistants"
+        )
+        st.session_state["file_id"].append(oai_file.id)
+        print(f"Uploaded new file: \t {oai_file.id}")
 
-    # # Add user messages to the thread?
-    # if (text := prompt.text):
-    #     message = client.beta.threads.messages.create(
-    #         thread_id=st.session_state["thread_id"],
-    #         role="user",
-    #         content=text
-    #     )
-    #     # Display user message in chat message container
-    #     with st.chat_message("user"):
-    #         st.markdown(prompt.text)
+    st.sidebar.header("File List")
 
-    #     # Previous stream
-    #     with st.chat_message("assistant"):
-    #         stream = client.chat.completions.create(
-    #             model=st.session_state["openai_model"],
-    #             messages=[
-    #                 {
-    #                     "role": "developer", 
-    #                     "content": DEVELOPER_MESSAGE
-    #                     },
-    #                 *({
-    #                     "role": m["role"], 
-    #                     "content": m["content"]
-    #                 }
-    #                 for m in st.session_state["messages"])
-    #             ],
-    #             stream=True
-    #         )
-            
-    #         response = st.write_stream(stream)
+    for idx, file in enumerate(st.session_state["files"], start=1):
+        st.sidebar.write(f"{idx}. {file.name}")
+
+
+    # st.toast("File(s) uploaded successfully")
+
+
+    # if not st.session_state["file_uploaded"]:
         
-if st.session_state["file_uploaded"]:
-    print(f"FILE UPLADED")
-    
-    if "thread_id" not in st.session_state:
-        thread = client.beta.threads.create()
-        st.session_state.thread_id = thread.id
-        print(st.session_state.thread_id)
-    
-    client.beta.threads.update(
-        thread_id=st.session_state.thread_id,
-        tool_resources={"code_interpreter": {"file_ids": [file_id for file_id in st.session_state.file_id]}}
-    )
+    #     # st.session_state["files"] = file_upload_box.file_uploader(
+    #     #     "Upload your dataset(s) and hypotheses...",
+    #     #     accept_multiple_files=True,
+    #     #     type=['csv','txt']
+    #     # )
 
-    # if "messages" not in st.session_state:
-    #     st.session_state.messages = []
-
-    #UI
-    for message in st.session_state.messages:
-        print(f"The message: {message}")
-        with st.chat_message(message["role"]):
-            for item in message["items"]:
-                item_type = item["type"]
-                if item_type == "text":
-                    st.markdown(item["content"])
-                elif item_type == "image":
-                    for image in item["content"]:
-                        st.image(image)
-                elif item_type == "code_input":
-                    with st.status("Code", state="complete"):
-                        st.code(item["content"])
-                elif item_type == "code_output":
-                    with st.status("Results", state="complete"):
-                        st.code(item["content"])
-
-    if prompt := st.chat_input(
-        "Ask a question or upload your hypotheses...", 
-        accept_file="multiple", 
-        file_type=["csv", "txt"]
-        ):
-
-        st.session_state.messages.append(
-            {
-                "role": "user",
-                "items": [
-                    {"type": "text",
-                     "content": prompt.text}
-                ]
-            }    
-        )
-
-        client.beta.threads.messages.create(
+    #     if upload_btn.button("Upload"):
+    #         st.session_state["file_id"] = []
+    #         for file in st.session_state["files"]:
+    #             oai_file = client.files.create(
+    #                 file=file,
+    #                 purpose="assistants"
+    #             )
+    #             st.session_state["file_id"].append(oai_file.id)
+    #             print(f"Uploaded new file: \t {oai_file.id}")
+    #         st.toast("File(s) uploaded successfully")
+    #         st.session_state["file_uploaded"] = True
+    #         file_upload_box.empty()
+    #         st.rerun()
+            
+    if st.session_state["file_uploaded"]:
+        print(f"FILE UPLADED")
+        
+        if "thread_id" not in st.session_state:
+            thread = client.beta.threads.create()
+            st.session_state.thread_id = thread.id
+            print(st.session_state.thread_id)
+        
+        client.beta.threads.update(
             thread_id=st.session_state.thread_id,
-            role="user",
-            content=prompt.text
+            tool_resources={"code_interpreter": {"file_ids": [file_id for file_id in st.session_state.file_id]}}
         )
 
-        # Chat message container for the user
-        with st.chat_message("user"):
-            st.markdown(prompt.text)
+        #UI
+        for message in st.session_state.messages:
+            print(f"The message: {message}")
+            with st.chat_message(message["role"]):
+                for item in message["items"]:
+                    item_type = item["type"]
+                    if item_type == "text":
+                        st.markdown(item["content"])
+                    elif item_type == "image":
+                        for image in item["content"]:
+                            st.image(image)
+                    elif item_type == "code_input":
+                        with st.status("Code", state="complete"):
+                            st.code(item["content"])
+                    elif item_type == "code_output":
+                        with st.status("Results", state="complete"):
+                            st.code(item["content"])
 
-        # Chat message container for the assistant
-        with st.chat_message("assistant"):
-            # First create an assistant
-            stream = client.beta.threads.runs.create(
-                thread_id=st.session_state.thread_id,
-                assistant_id=assistant.id,
-                tool_choice={"type": "code_interpreter"},
-                stream=True
+        if prompt := st.chat_input(
+            "Ask a question or upload your hypotheses...", 
+            accept_file="multiple", 
+            file_type=["csv", "txt"]
+            ):
+
+            st.session_state.messages.append(
+                {
+                    "role": "user",
+                    "items": [
+                        {"type": "text",
+                        "content": prompt.text}
+                    ]
+                }    
             )
 
-            # Initialize a list of outputs
-            assistant_output = []
-            
-            # Handle events in the stream
-            for event in stream:
-                # print(f"[INFO] Event:\n {type(event)}")
-                # if event == thread.run.step.delta:
-                if isinstance(event, ThreadRunStepCreated):
-                    if event.data.step_details.type == "tool_calls":
-                        assistant_output.append({"type": "code_input",
-                                                 "content": ""})
-                        
-                        code_input_expander = st.status("Writing code ...", expanded=True)
-                        code_input_block = code_input_expander.empty()
+            client.beta.threads.messages.create(
+                thread_id=st.session_state.thread_id,
+                role="user",
+                content=prompt.text
+            )
 
-                if isinstance(event, ThreadRunStepDelta):
-                    if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
-                        code_interpreter = event.data.delta.step_details.tool_calls[0].code_interpreter
-                        code_input_delta = code_interpreter.input
-                        # print(f"[INFO] Code input delta: {code_input_delta}")
-                        if (code_input_delta is not None) and (code_input_delta != ""):
-                            assistant_output[-1]["content"] += code_input_delta
-                            code_input_block.empty()
-                            code_input_block.code(assistant_output[-1]["content"])
-                            # This part is added so that the 
-                        # code_input_expander.update(label="Code", state="complete", expanded=False)
+            # Chat message container for the user
+            with st.chat_message("user"):
+                st.markdown(prompt.text)
 
-                elif isinstance(event, ThreadRunStepCompleted):
-                    if isinstance(event.data.step_details, ToolCallsStepDetails):
-                        print(f"[INFO] Event data step details: {event.data.step_details.tool_calls}")
-                        code_interpreter = event.data.step_details.tool_calls[0].code_interpreter
-                        print(f"[INFO] Code interpreter:\n {code_interpreter.outputs}")
-                        
-                        code_input_expander.update(label="Code", state="complete", expanded=False)
+            # Chat message container for the assistant
+            with st.chat_message("assistant"):
+                # First create an assistant
+                stream = client.beta.threads.runs.create(
+                    thread_id=st.session_state.thread_id,
+                    assistant_id=assistant.id,
+                    tool_choice={"type": "code_interpreter"},
+                    stream=True
+                )
 
-                        print(f"[INFO] Code interpreter outputs:\n {code_interpreter.outputs}")
-                        
-                        for output in code_interpreter.outputs:
-
-                            print(f"[INFO] Type of an element {type(output)}")
-
-                            image_data_bytes_list = []
-
-                            if isinstance(output, CodeInterpreterOutputImage):
-
-                                # Can it produce multiple images?
-
-                                # print(f"[INFO] This is an image. Add to the client file list: {client.files.list()}")
-                                print("***"*10)
-                                print(f"[INFO] Image output: {output}")
-
-                                image_file_id = output.image.file_id                                   
-                                image_data = client.files.content(image_file_id)
-                                
-                                image_data_bytes = image_data.read()
-
-                                print(f"[INFO] Image data:\n{image_data}")
-                                print("***"*10)
-                                
-                                st.image(image_data_bytes)
-
-                                image_data_bytes_list.append(image_data_bytes)
-
-
-
-                            if isinstance(output, CodeInterpreterOutputLogs):
-                                # print(f"[INFO] This is a log. Show it in the code window.")
-                                assistant_output.append({"type": "code_input",
-                                                         "content": ""})
-                                code_output = output.logs
-                                with st.status("Results", state="complete"):
-                                    st.code(code_output)
-                                    assistant_output[-1]["content"] = code_output
-
-                            assistant_output.append({
-                                "type": "image",
-                                "content":image_data_bytes_list
-                            })
+                # Initialize a list of outputs
+                assistant_output = []
                 
-                elif isinstance(event, ThreadMessageCreated):
-                    assistant_output.append({"type": "text",
-                                             "content": ""})
-                    assistant_text_box = st.empty()
+                # Handle events in the stream
+                for event in stream:
+                    # print(f"[INFO] Event:\n {type(event)}")
+                    # if event == thread.run.step.delta:
+                    if isinstance(event, ThreadRunStepCreated):
+                        if event.data.step_details.type == "tool_calls":
+                            assistant_output.append({"type": "code_input",
+                                                    "content": ""})
+                            
+                            code_input_expander = st.status("Writing code ...", expanded=True)
+                            code_input_block = code_input_expander.empty()
 
-                elif isinstance(event, ThreadMessageDelta):
-                    if isinstance(event.data.delta.content[0], TextDeltaBlock):
-                        assistant_text_box.empty()
-                        assistant_output[-1]["content"] += event.data.delta.content[0].text.value
-                        assistant_text_box.markdown(assistant_output[-1]["content"])
+                    if isinstance(event, ThreadRunStepDelta):
+                        if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
+                            code_interpreter = event.data.delta.step_details.tool_calls[0].code_interpreter
+                            code_input_delta = code_interpreter.input
+                            # print(f"[INFO] Code input delta: {code_input_delta}")
+                            if (code_input_delta is not None) and (code_input_delta != ""):
+                                assistant_output[-1]["content"] += code_input_delta
+                                code_input_block.empty()
+                                code_input_block.code(assistant_output[-1]["content"])
+                                # This part is added so that the 
+                            # code_input_expander.update(label="Code", state="complete", expanded=False)
 
-            st.session_state.messages.append({"role": "assistant", "items": assistant_output})
+                    elif isinstance(event, ThreadRunStepCompleted):
+                        if isinstance(event.data.step_details, ToolCallsStepDetails):
+                            print(f"[INFO] Event data step details: {event.data.step_details.tool_calls}")
+                            code_interpreter = event.data.step_details.tool_calls[0].code_interpreter
+                            print(f"[INFO] Code interpreter:\n {code_interpreter.outputs}")
+                            
+                            code_input_expander.update(label="Code", state="complete", expanded=False)
+
+                            print(f"[INFO] Code interpreter outputs:\n {code_interpreter.outputs}")
+                            
+                            for output in code_interpreter.outputs:
+
+                                print(f"[INFO] Type of an element {type(output)}")
+
+                                image_data_bytes_list = []
+
+                                if isinstance(output, CodeInterpreterOutputImage):
+
+                                    # Can it produce multiple images?
+
+                                    # print(f"[INFO] This is an image. Add to the client file list: {client.files.list()}")
+                                    print("***"*10)
+                                    print(f"[INFO] Image output: {output}")
+
+                                    image_file_id = output.image.file_id                                   
+                                    image_data = client.files.content(image_file_id)
+                                    
+                                    image_data_bytes = image_data.read()
+
+                                    print(f"[INFO] Image data:\n{image_data}")
+                                    print("***"*10)
+                                    
+                                    st.image(image_data_bytes)
+
+                                    image_data_bytes_list.append(image_data_bytes)
+
+
+
+                                if isinstance(output, CodeInterpreterOutputLogs):
+                                    # print(f"[INFO] This is a log. Show it in the code window.")
+                                    assistant_output.append({"type": "code_input",
+                                                            "content": ""})
+                                    code_output = output.logs
+                                    with st.status("Results", state="complete"):
+                                        st.code(code_output)
+                                        assistant_output[-1]["content"] = code_output
+
+                                assistant_output.append({
+                                    "type": "image",
+                                    "content":image_data_bytes_list
+                                })
+                    
+                    elif isinstance(event, ThreadMessageCreated):
+                        assistant_output.append({"type": "text",
+                                                "content": ""})
+                        assistant_text_box = st.empty()
+
+                    elif isinstance(event, ThreadMessageDelta):
+                        if isinstance(event.data.delta.content[0], TextDeltaBlock):
+                            assistant_text_box.empty()
+                            assistant_output[-1]["content"] += event.data.delta.content[0].text.value
+                            assistant_text_box.markdown(assistant_output[-1]["content"])
+
+                st.session_state.messages.append({"role": "assistant", "items": assistant_output})
