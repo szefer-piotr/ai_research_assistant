@@ -27,7 +27,7 @@ load_dotenv()
 #UI
 
 st.set_page_config(page_title="Research Assistant",
-                    page_icon="🕵️")
+                    page_icon="🕵️", layout="wide")
 
 st.subheader("🔮 Research Assistant")
 
@@ -41,7 +41,7 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = [{"role": "assistant",
                                         "items": [
                                             {"type": "text", 
-                                            "content": "Upload your files and lets discuss what you would like to work on today?"
+                                            "content": "What you would like to work on today?"
                                             }]}]
 
 if "file_uploaded" not in st.session_state:
@@ -76,6 +76,28 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 # Set up OpenAI client
 client = OpenAI(api_key=openai_api_key)
 
+# Display existing messages
+# for message in st.session_state.messages:
+#     with st.chat_message(message["role"]):
+#         st.markdown(message["content"])
+
+for message in st.session_state.messages:
+    print(f"The message: {message}")
+    with st.chat_message(message["role"]):
+        for item in message["items"]:
+            item_type = item["type"]
+            if item_type == "text":
+                st.markdown(item["content"])
+            elif item_type == "image":
+                for image in item["content"]:
+                    st.image(image)
+            elif item_type == "code_input":
+                with st.status("Code", state="complete"):
+                    st.code(item["content"])
+            elif item_type == "code_output":
+                with st.status("Results", state="complete"):
+                    st.code(item["content"])
+
 if (uploaded_file) == None and not (st.session_state.file_uploaded):
     # st.write("Upload your files.")
     if upload_btn:
@@ -87,17 +109,24 @@ if (uploaded_file) == None and not (st.session_state.file_uploaded):
     # Allow for a conversation without having any files
     if prompt := st.chat_input("Ask a question or upload your data..."):
         st.chat_message("user").markdown(prompt)
+
+        print(f"Appending user's message...")
+
         st.session_state.messages.append(
-            {"role": "assistant",
+            {"role": "user",
              "items": [
-                 {"type": "text", 
+                 {"type": "text",
                   "content": prompt
                   }
                   ]
             }
         )
 
+        print(f"User message appended")
+
         with st.chat_message("assistant"):
+            print(f"Creating chat completion.")
+            
             stream = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -105,7 +134,29 @@ if (uploaded_file) == None and not (st.session_state.file_uploaded):
                 ],
                 stream=True,
             )
-            st.write_stream(stream)
+
+            response_text = ""
+
+            message_placeholder = st.empty()
+
+            for chunk in stream:
+                content = chunk.choices[0].delta.content
+                if content:
+                    response_text += content
+                    message_placeholder.markdown(response_text)
+
+            # After streaming, store the response in session state
+            st.session_state.messages.append(
+                {"role": "assistant", 
+                 "items": [
+                     {"type": "text",
+                      "content": response_text}
+                 ]}
+            )
+
+           
+
+        
 
 
 
@@ -188,22 +239,22 @@ if st.session_state["file_uploaded"]:
     )
 
     #UI
-    for message in st.session_state.messages:
-        print(f"The message: {message}")
-        with st.chat_message(message["role"]):
-            for item in message["items"]:
-                item_type = item["type"]
-                if item_type == "text":
-                    st.markdown(item["content"])
-                elif item_type == "image":
-                    for image in item["content"]:
-                        st.image(image)
-                elif item_type == "code_input":
-                    with st.status("Code", state="complete"):
-                        st.code(item["content"])
-                elif item_type == "code_output":
-                    with st.status("Results", state="complete"):
-                        st.code(item["content"])
+    # for message in st.session_state.messages:
+    #     print(f"The message: {message}")
+    #     with st.chat_message(message["role"]):
+    #         for item in message["items"]:
+    #             item_type = item["type"]
+    #             if item_type == "text":
+    #                 st.markdown(item["content"])
+    #             elif item_type == "image":
+    #                 for image in item["content"]:
+    #                     st.image(image)
+    #             elif item_type == "code_input":
+    #                 with st.status("Code", state="complete"):
+    #                     st.code(item["content"])
+    #             elif item_type == "code_output":
+    #                 with st.status("Results", state="complete"):
+    #                     st.code(item["content"])
 
     if prompt := st.chat_input(
         "Ask a question or upload your hypotheses...", 
