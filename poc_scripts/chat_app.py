@@ -156,12 +156,6 @@ if (uploaded_file) == None and not (st.session_state.file_uploaded):
 
            
 
-        
-
-
-
-
-
 elif uploaded_file is not None:
 
     assistant = client.beta.assistants.create(
