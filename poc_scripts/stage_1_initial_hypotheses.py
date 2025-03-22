@@ -49,7 +49,7 @@ Begin by refining your initial ideas into testable hypotheses.
 - Explicit testable hypotheses.
 """)
 
-
+# Keep the message history
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant",
                                   "items": [
@@ -57,60 +57,97 @@ if "messages" not in st.session_state:
                                        "content": "Lets work on your research questions first."}
                                   ]}]
 
+# Boolean indicator
 if "file_uploaded" not in st.session_state:
     st.session_state.file_uploaded = False
 
+# Store UploadedFile objects
 if "files" not in st.session_state:
-    st.session_state.files = []
+    st.session_state.files = {}
 
+# This is to store the data summary
 if "data_summary" not in st.session_state:
     st.session_state.data_summary = []
 
+if "hypotheses" not in st.session_state:
+    st.session_state.hypotheses = []
+
+# Store the file IDs for the thread
 if "file_id" not in st.session_state:
     st.session_state.file_id = []
 
+# Store the thread ID
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = []
+
+# Things happening in the sidebar
 with st.sidebar:
-    uploaded_file = st.file_uploader("Choose a file", type=['csv'])
+    # If the file is not uploaded yet upload it, check if its name is already in the files
+    if not st.session_state.file_uploaded:
 
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df)
+        # Display the file uploader
+        uploaded_file = st.file_uploader("Choose a file", type=['csv'])
         
-        st.session_state.file_uploaded = True
-        st.session_state["files"].append(uploaded_file)
+        # Evaluate whether the file is uploaded
+        if uploaded_file is not None:
+            
+            # Check if the file has already been uploaded
+            if uploaded_file.name in st.session_state.files.keys():
+                print(f"Uploaded file name: {uploaded_file.name}")
+                st.warning("This file has already been uploaded.")
+                st.stop()
 
-        # Create a thread for the user whith the uploaded file
-        if "thread_id" not in st.session_state:
-            thread = client.beta.threads.create()
-            st.session_state.thread_id = thread.id
-            print(st.session_state.thread_id)
+            else: 
+                # Display the uploaded file
+                df = pd.read_csv(uploaded_file)
+                st.dataframe(df)
 
-    if button := st.button("Inspect the data"):
+                # Save the uploaded file in a dictionary
+                st.session_state.files[uploaded_file.name] = uploaded_file
+                # Change the boolean indicator
+                st.session_state.file_uploaded = True
 
-        if not st.session_state.file_uploaded:
-            st.warning("Please upload a file first.")
-            st.stop()
+                # Create a thread for the user whith the uploaded file
+                thread = client.beta.threads.create()
+                st.session_state.thread_id = thread.id
+                
+                print(f"\nThread created with an ID {st.session_state.thread_id}")
+                
+                # Rerun the script to move to the next step
+                st.rerun()
 
-        else:
-            # Create an agent that reads the data and returns its summary
-            # Details of the summary can be later used to generate hypotheses
+    # # Sidebar functionality after file already uploaded
+    else:
+        selected_file = st.selectbox("Select a file to summarize/read", options=list(st.session_state.files.keys()))
+
+        if selected_file:
+            file_obj = st.session_state.files[selected_file]
+            file_obj.seek(0)
+
+            try:
+                df = pd.read_csv(file_obj)
+                st.subheader("Data preview:")
+                st.dataframe(df)
+            except Exception as e:
+                st.error(f"Error reading the file: {e}")
+
+        if button := st.button("Inspect the data"):
 
             with st.spinner("Inspecting the data ..."):
 
                 for file in st.session_state.files:
+
+                    print(f"This is the file in the sesssion_state files {file}")
+
+                    # Create a file for the assistant
                     oai_file = client.files.create(
-                        file=file,
+                        file=st.session_state.files[file],
                         purpose="assistants"
                     )
+                    # Append the file ID to the list
                     st.session_state.file_id.append(oai_file.id)
 
-                # Not sure whether this part is necessary
-                message = client.beta.threads.messages.create(
-                    thread_id=st.session_state.thread_id,
-                    role="user",
-                    content="Inspect the data"
-                )
-
+                # Create an assistant for data summarization
                 data_summary_assistant = client.beta.assistants.create(
                     name="Data Summarizing Assistant",
                     instructions="Summarize the data. Provide column names, data types, and basic statistics.",
@@ -118,6 +155,7 @@ with st.sidebar:
                     model="gpt-4o"
                 )
 
+                # Update the thread with the assistant
                 client.beta.threads.update(
                     thread_id=st.session_state.thread_id,
                     tool_resources={"code_interpreter": {
@@ -125,7 +163,9 @@ with st.sidebar:
                     }
                 )
 
-                with st.chat_message("assistant"):
+                data_summary_box = st.empty()
+
+                with data_summary_box:
                     stream = client.beta.threads.runs.create(
                         thread_id=st.session_state.thread_id,
                         assistant_id=data_summary_assistant.id,
@@ -151,12 +191,15 @@ with st.sidebar:
                     print(f"The saved data summary: {st.session_state.data_summary}.")
 
             st.success("Done!")
-
             st.session_state.messages.append({"role": "assistant",
                                             "items": [
                                                 {"type": "text",
-                                                "content": "Great! Let's move on to hypotheses."}
+                                                "content": "I have a summary of your dataset! We will use it to refine your hypotheses."}
                                             ]})
+    
+    # This is the summay of the data
+    if st.session_state.data_summary:
+        st.write(st.session_state.data_summary)
         
 
 st.markdown("---")
@@ -171,23 +214,32 @@ for message in st.session_state.messages:
                 dataframe = pd.read_csv(item["file"])
                 st.write(dataframe)
 
-if prompt := st.chat_input("Paste your hypotheses here, or upload your files (csv, txt)",
-                           accept_file="multiple"):
+if prompt := st.chat_input("Paste your hypotheses here",
+                           accept_file=True):
     
     print(prompt)
 
     if prompt.text:
-        st.session_state.messages.append({"role": "user",
-                                          "items": [
-                                              {"type": "text",
-                                               "content": prompt.text}
-                                          ]})
+        st.sesssion_state.hypotheses.append(prompt.text)
+        # st.session_state.messages.append({"role": "user",
+        #                                   "items": [
+        #                                       {"type": "text",
+        #                                        "content": prompt.text}
+        #                                   ]})
+    
     if prompt.files:
-        for file in prompt.files:
-            st.session_state.files.append(file)
-            st.session_state.messages.append({"role": "user",
-                                              "items": [
-                                                  {"type": "file",
-                                                   "content": file.name,
-                                                   "file": file}
-                                              ]})
+        file = prompt.files[0]
+        file.seek(0)
+        content = file.read().decode("utf-8")
+        st.session_state.hypotheses.append(content)
+        st.success("Hypotheses uploaded successfully!")
+
+if st.session_state.hypotheses:
+    st.subheader("Current Hypotheses")
+    for idx, hypo in enumerate(st.session_state.hypotheses, start=1):
+        st.markdown(f"**{idx}.** {hypo}")
+
+# Optional: button to clear session state
+if st.button("Clear all hypotheses"):
+    st.session_state.hypotheses.clear()
+    st.success("All hypotheses cleared.")
