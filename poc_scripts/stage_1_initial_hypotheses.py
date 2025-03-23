@@ -67,7 +67,15 @@ if "files" not in st.session_state:
 
 # This is to store the data summary
 if "data_summary" not in st.session_state:
-    st.session_state.data_summary = []
+    st.session_state.data_summary = [
+        {
+            "type":"text",
+            "content":"The dataset consists of 61 columns. Here are the column names along with their data types:\n\n1. **INDEX_OF_INDIVIDUALS**: int\n2. **Bee.species**: object (string)\n3. **Species.code**: object (string)\n4. **Sex**: object (string)\n5. **Site.number**: object (string)\n6. **Year**: int\n7. **Month**: object (string)\n8. **Day**: int\n9. **Family**: object (string)\n10. **Social.behavior**: object (string)\n11. Additional columns related to impervious surface area and population density, all appearing as strings at first sight but potentially representing numerical values. These columns include:\n    - **Impervious.surface.area.in.buffer.250.m.[mean]**\n    - **Impervious.surface.area.in.buffer.500.m.[mean]**\n    - **Impervious.surface.area.in.buffer.750.m.[mean]**\n    - **Impervious.surface.area.in.buffer.1000.m.[mean]**\n    - **Impervious.surface.area.in.buffer.1500.m.[mean]**\n    - **Population.density.in.buffer.250.m**\n    - **Population.density.in.buffer.500.m**\n    - **Population.density.in.buffer.750.m**\n    - **Population.density.in.buffer.1000.m**\n    - **Population.density.in.buffer.1500.m**\n\nLet's convert any necessary columns to numeric data types and then provide basic statistics for the numerical columns."},
+        {
+            "type":"text",
+            "content":"Here are the basic statistics for the numeric columns in the dataset:\n\n1. **INDEX_OF_INDIVIDUALS**: \n   - Mean: 2882\n   - Min: 1\n   - Max: 5763\n\n2. **Year**:\n   - Mean: 2018.62\n   - Min: 2018\n   - Max: 2019\n\n3. **Day**:\n   - Mean: 10.15\n   - Min: 1\n   - Max: 28\n\n4. **Lifespan (month)**:\n   - Mean: 4.79\n   - Min: 1\n   - Max: 8\n\n5. **Shortest Distance Between Sites (m)**:\n   - Mean: 4684.31\n   - Min: 527.72\n   - Max: 20068.52\n\n6. **Year of Research**:\n   - Mean: 2018.62\n   - Min: 2018\n   - Max: 2019\n\n7. **Coverage of Bee Food Plant Species (%)**:\n   - Mean: 41.77\n   - Min: 17\n   - Max: 65\n\n8. **Floral Richness**: \n   - Mean: 71.27\n   - Min: 32\n   - Max: 130\n\n9. **Alien Floral Richness (%)**:\n   - Mean: 30.19\n   - Min: 21.95\n   - Max: 39.71\n\n10. **Native Floral Richness (%)**:\n    - Mean: 54.03\n    - Min: 32.22\n    - Max: 75.76\n\n11. **Impervious Surface Area in Buffers (mean values)**:\n    - 250 m: Mean = 31.60, Min = 0.51, Max = 81.18\n    - 500 m: Mean = 29.33, Min = 0.20, Max = 73.53\n    - 750 m: Mean = 28.68, Min = 0.12, Max = 67.17\n    - 1000 m: Mean = 27.94, Min = 0.26, Max = 64.89\n    - 1500 m: Mean = 26.32, Min = 0.59, Max = 61.13\n\n12. **Population Density in Buffers**:\n    - 250 m: Mean = 1200.09, Min = 8.52, Max = 3089.27\n    - 500 m: Mean = 3433.24, Min = 27.98, Max = 8411.30\n    - 750 m: Mean = 6673.97, Min = 61.44, Max = 16160.06\n    - 1000 m: Mean = 10800.93, Min = 116.43, Max = 25562.41\n    - 1500 m: Mean = 21513.08, Min = 314.70, Max = 51698.95\n\nThese statistics provide a summary of the dataset, highlighting central tendencies, dispersions, and the range of values for each numeric attribute."
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         }
+            ]
 
 if "hypotheses" not in st.session_state:
     st.session_state.hypotheses = []
@@ -214,6 +222,11 @@ for message in st.session_state.messages:
                 dataframe = pd.read_csv(item["file"])
                 st.write(dataframe)
 
+# if st.session_state.hypotheses:
+#     st.subheader("Current Hypotheses")
+#     for idx, hypo in enumerate(st.session_state.hypotheses, start=1):
+#         st.markdown(f"**{idx}.** {hypo}")
+
 if prompt := st.chat_input("Paste your hypotheses here",
                            accept_file=True):
     
@@ -221,11 +234,6 @@ if prompt := st.chat_input("Paste your hypotheses here",
 
     if prompt.text:
         st.sesssion_state.hypotheses.append(prompt.text)
-        # st.session_state.messages.append({"role": "user",
-        #                                   "items": [
-        #                                       {"type": "text",
-        #                                        "content": prompt.text}
-        #                                   ]})
     
     if prompt.files:
         file = prompt.files[0]
@@ -234,12 +242,41 @@ if prompt := st.chat_input("Paste your hypotheses here",
         st.session_state.hypotheses.append(content)
         st.success("Hypotheses uploaded successfully!")
 
-if st.session_state.hypotheses:
-    st.subheader("Current Hypotheses")
-    for idx, hypo in enumerate(st.session_state.hypotheses, start=1):
-        st.markdown(f"**{idx}.** {hypo}")
-
-# Optional: button to clear session state
 if st.button("Clear all hypotheses"):
     st.session_state.hypotheses.clear()
     st.success("All hypotheses cleared.")
+    st.rerun()
+
+# Optional: button to clear session state
+if st.button("Refine hypotheses with the assistant"):
+
+    print("Button clicked.")
+    
+    print(f"Hypotheses, type: {type(st.session_state.hypotheses)},\n{st.session_state.hypotheses}")
+    print(f"Data summary: type: {type(st.session_state.data_summary)},\n{st.session_state.data_summary}")
+
+    hypotheses_text = "\n\n".join(st.session_state.hypotheses)
+    data_summary_text = "\n\n".join(item["content"] for item in st.session_state.data_summary)
+    combined_text = f"{hypotheses_text}\n\n---\n\n{data_summary_text}"
+    print(combined_text)
+    st.markdown(combined_text)
+
+    with st.spinner("Refining hypotheses ..."):
+        print("Refining hypotheses ...")
+        stream = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": combined_text
+                }
+            ],
+        )
+
+        st.write(stream)
+    
+        st.session_state.hypotheses.append(stream.choices[0].message.content)
+
+    st.success("Have a look at the refined hypotheses.")
+
+st.write(st.session_state.hypotheses)
