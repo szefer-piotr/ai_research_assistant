@@ -3,6 +3,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import time
+import json
 
 import pandas as pd
 
@@ -30,24 +31,6 @@ client = OpenAI(api_key=openai_api_key)
 st.set_page_config(page_title="Research Assistant", 
                    page_icon="🧠", 
                    layout="centered")
-st.subheader("**Step 1: Define Clear Research Questions and Hypotheses**")
-st.markdown("""
-Begin by refining your initial ideas into testable hypotheses.
-
-**Clarify your ecological questions:**
-- What specifically are you trying to understand? (e.g., species interactions, community dynamics, impacts of environmental variables)
-
-**Formulate hypotheses clearly as:**
-- A clear statement predicting relationships among variables (e.g., "Plant biomass will decrease with increasing herbivore density.")
-
-**Think about:**
-- Ecological theory to guide expectations.
-- Existing literature to contextualize your hypotheses.
-
-**Output of this step:**
-- Clearly written research questions.
-- Explicit testable hypotheses.
-""")
 
 # Keep the message history
 if "messages" not in st.session_state:
@@ -87,6 +70,38 @@ if "file_id" not in st.session_state:
 # Store the thread ID
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = []
+
+if "hypotheses_approved" not in st.session_state:
+    st.session_state.hypotheses_approved = False
+
+if not st.session_state.hypotheses_approved:
+    st.subheader("**Step 1: Define Clear Research Questions and Hypotheses**")
+    st.markdown("""
+    Begin by refining your initial ideas into testable hypotheses.
+
+    **Clarify your ecological questions:**
+    - What specifically are you trying to understand? (e.g., species interactions, community dynamics, impacts of environmental variables)
+
+    **Formulate hypotheses clearly as:**
+    - A clear statement predicting relationships among variables (e.g., "Plant biomass will decrease with increasing herbivore density.")
+
+    **Think about:**
+    - Ecological theory to guide expectations.
+    - Existing literature to contextualize your hypotheses.
+
+    **Output of this step:**
+    - Clearly written research questions.
+    - Explicit testable hypotheses.
+""")
+
+# If the hypotheses are approved, display them
+else:
+    with st.sidebar:
+        st.subheader("Approved Hypotheses")
+        print(st.session_state.hypotheses)
+        st.write(st.session_state.hypotheses)
+
+    st.stop()
 
 # Things happening in the sidebar
 with st.sidebar:
@@ -242,10 +257,10 @@ if prompt := st.chat_input("Paste your hypotheses here",
         st.session_state.hypotheses.append(content)
         st.success("Hypotheses uploaded successfully!")
 
-if st.button("Clear all hypotheses"):
-    st.session_state.hypotheses.clear()
-    st.success("All hypotheses cleared.")
-    st.rerun()
+    if st.button("Clear all hypotheses"):
+        st.session_state.hypotheses.clear()
+        st.success("All hypotheses cleared.")
+        st.rerun()
 
 # Optional: button to clear session state
 if st.button("Refine hypotheses with the assistant"):
@@ -263,20 +278,103 @@ if st.button("Refine hypotheses with the assistant"):
 
     with st.spinner("Refining hypotheses ..."):
         print("Refining hypotheses ...")
-        stream = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": combined_text
-                }
+        
+        # stream = client.chat.completions.create(
+        #     model="gpt-4o",
+        #     messages=[
+        #         {
+        #             "role": "user",
+        #             "content": combined_text
+        #         }
+        #     ],
+        # )
+
+        # stream = client.chat.completions.create(
+        #     model="gpt-4o",
+        #     messages=[
+        #         {"role": "system", 
+        #          "content": "You are an expert in ecology and you help students to refine thieir scientific hypotheses. Your response should be in JSON format."},
+        #         {
+        #             "role": "user",
+        #             "content": combined_text
+        #         }
+        #     ],
+        #     response_format={"type": "json_object"}
+        # )
+        # st.write(stream.choices[0].message.content)
+    
+        # st.session_state.hypotheses.append(stream.choices[0].message.content)
+
+        response = client.responses.create(
+            model="gpt-4o-2024-08-06",
+            input=[
+                {"role": "system", "content": "Extract individual hypotheses and refine them one by one."},
+                {"role": "user", "content": combined_text}
             ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "hypotheses",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "hypotheses": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": { "type": "string" },
+                                        "steps": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "step": { "type": "string" }
+                                                },
+                                                "required": ["step"],
+                                                "additionalProperties": False
+                                            }
+                                        }
+                                    },
+                                    "required": ["title", "steps"],
+                                    "additionalProperties": False
+                                }
+                            }
+                        },
+                        "required": ["hypotheses"],
+                        "additionalProperties": False
+                    },
+                    "strict": True
+                }
+            }
+            # text={
+            #     "format": {
+            #         "type": "json_schema",
+            #         "name": "hypotheses",
+            #         "schema": {
+            #             "type": "object",
+            #             "properties": {
+            #                 "tilte": {"type": "string"},
+            #                 "steps": {"type": "string"},
+            #                 "hypotheses_text": {"type": "string"},
+            #                 }
+            #             },
+            #         "required": ["title", "step", "hypotheses_text"],
+            #         "additionalProperties": False
+            #     }
+            #     # "strict": True
+            # }
         )
 
-        st.write(stream)
-    
-        st.session_state.hypotheses.append(stream.choices[0].message.content)
+        print(json.loads(response.output_text))
+        st.markdown(json.loads(response.output_text))
+        st.session_state.hypotheses.append(json.loads(response.output_text))
 
     st.success("Have a look at the refined hypotheses.")
-
-st.write(st.session_state.hypotheses)
+    
+if st.button("Save refined hypotheses"):
+    # Saves only the last hypothesis
+    st.session_state.hypotheses = st.session_state.hypotheses[-1]
+    st.session_state.hypotheses_approved = True
+    st.success("Hypotheses saved successfully!")
+    st.rerun()

@@ -1,7 +1,7 @@
 python-dotenv
 langchain-community
 langchain-openai
-openai
+openai==1.68.2
 pandas
 PyPDF2
 llama_index
