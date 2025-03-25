@@ -116,6 +116,7 @@ else:
     )
 
     hypotheses_text = {}
+    
     for hypothesis in st.session_state.hypotheses["hypotheses"]:
         title = hypothesis['title']
         steps = [step['step'] for step in hypothesis['steps']]
@@ -124,6 +125,7 @@ else:
     if selected_hypothesis:
         #  st.write(selected_hypothesis)
         st.write(hypotheses_text[selected_hypothesis])
+        
         if st.button("Create an analysis plan"):
             with st.spinner("Creating an analysis plan ..."):
                 analysis_plan = client.responses.create(
@@ -177,116 +179,117 @@ else:
 
     sideb = st.sidebar
 
-    sideb.markdown("### Hypotheses")
+    sideb.markdown("## Analysis Steps")
+    hypothesis_to_generate_code = sideb.selectbox("Select a hypothesis to work on", options=list(st.session_state.analysis_steps.keys()))
 
-    with st.sidebar:
-        st.markdown("### Analysis Steps")
-        # st.write(st.session_state.analysis_steps)
-        hypothesis_to_generate_code = st.selectbox("Select a hypothesis to work on", options=list(st.session_state.analysis_steps.keys()))
+    # with st.sidebar:
+    #     st.markdown("### Analysis Steps")
+    #     # st.write(st.session_state.analysis_steps)
+    #     # hypothesis_to_generate_code = st.selectbox("Select a hypothesis to work on", options=list(st.session_state.analysis_steps.keys()))
         
-        if hypothesis_to_generate_code:
-            st.markdown(f"### {hypothesis_to_generate_code}")
-            st.write(st.session_state.analysis_steps[hypothesis_to_generate_code])
-            print(f"Analysis steps: {json.dumps(st.session_state.analysis_steps[hypothesis_to_generate_code])}")
-            
-            if st.button("Run the step."):
-                with st.spinner("Running the step ..."):
-                    
-                    # Create a thread and attach the hypothesis steps and data summary
-                    code_execution_assistant = client.beta.assistants.create(
-                        model="gpt-4o",
-                        name="Code Execution Assistant",
-                        instructions="Write code to execute the analysis step.",
-                        tools=[{"type": "code_interpreter"}],
-                        tool_resources={"code_interpreter": {
-                            "file_ids": [file_id for file_id in st.session_state.file_id]}
-                        }       
-                    )
-                    
-                    step_text = json.dumps(st.session_state.analysis_steps[hypothesis_to_generate_code])
+    if hypothesis_to_generate_code:
+        st.markdown(f"### {hypothesis_to_generate_code}")
+        st.write(st.session_state.analysis_steps[hypothesis_to_generate_code])
+        print(f"Analysis steps: {json.dumps(st.session_state.analysis_steps[hypothesis_to_generate_code])}")
+        
+        if st.button("Run the step."):
+            with st.spinner("Running the step ..."):
+                
+                # Create a thread and attach the hypothesis steps and data summary
+                code_execution_assistant = client.beta.assistants.create(
+                    model="gpt-4o",
+                    name="Code Execution Assistant",
+                    instructions="Write code to execute the analysis step.",
+                    tools=[{"type": "code_interpreter"}],
+                    tool_resources={"code_interpreter": {
+                        "file_ids": [file_id for file_id in st.session_state.file_id]}
+                    }       
+                )
+                
+                step_text = json.dumps(st.session_state.analysis_steps[hypothesis_to_generate_code])
 
-                    # Create a message on the thread
-                    message = client.beta.threads.messages.create(
-                        thread_id=st.session_state.thread_id,
-                        role="user",
-                        content=step_text
-                    )
+                # Create a message on the thread
+                message = client.beta.threads.messages.create(
+                    thread_id=st.session_state.thread_id,
+                    role="user",
+                    content=step_text
+                )
 
-                    stream = client.beta.threads.runs.create(
-                        thread_id=st.session_state.thread_id,
-                        assistant_id=code_execution_assistant.id,
-                        tool_choice={"type": "code_interpreter"},
-                        stream=True
-                    )
+                stream = client.beta.threads.runs.create(
+                    thread_id=st.session_state.thread_id,
+                    assistant_id=code_execution_assistant.id,
+                    tool_choice={"type": "code_interpreter"},
+                    stream=True
+                )
 
-                    assistant_output = []
+                assistant_output = []
 
-                    for event in stream:
-                        # print(f"[INFO] Event:\n {type(event)}")
-                        # if event == thread.run.step.delta:
-                        if isinstance(event, ThreadRunStepCreated):
-                            if event.data.step_details.type == "tool_calls":
-                                assistant_output.append({"type": "code_input",
-                                                        "content": ""})
-                                
-                                code_input_expander = st.status("Writing code ...", expanded=True)
-                                code_input_block = code_input_expander.empty()
-
-                        if isinstance(event, ThreadRunStepDelta):
-                            if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
-                                code_interpreter = event.data.delta.step_details.tool_calls[0].code_interpreter
-                                code_input_delta = code_interpreter.input
-                                # print(f"[INFO] Code input delta: {code_input_delta}")
-                                if (code_input_delta is not None) and (code_input_delta != ""):
-                                    assistant_output[-1]["content"] += code_input_delta
-                                    code_input_block.empty()
-                                    code_input_block.code(assistant_output[-1]["content"])
-                                    # This part is added so that the 
-                                # code_input_expander.update(label="Code", state="complete", expanded=False)
-
-                        elif isinstance(event, ThreadRunStepCompleted):
-                            if isinstance(event.data.step_details, ToolCallsStepDetails):
-                                code_interpreter = event.data.step_details.tool_calls[0].code_interpreter
-                                code_input_expander.update(label="Code", state="complete", expanded=False)
-
-                                for output in code_interpreter.outputs:
-                                    image_data_bytes_list = []
-                                    
-                                    if isinstance(output, CodeInterpreterOutputImage):
-                                        image_file_id = output.image.file_id                                   
-                                        image_data = client.files.content(image_file_id)
-                                        image_data_bytes = image_data.read()
-                                        st.image(image_data_bytes)
-                                        image_data_bytes_list.append(image_data_bytes)
-
-                                    if isinstance(output, CodeInterpreterOutputLogs):
-                                        # print(f"[INFO] This is a log. Show it in the code window.")
-                                        assistant_output.append({"type": "code_input",
-                                                                "content": ""})
-                                        code_output = output.logs
-                                        with st.status("Results", state="complete"):
-                                            st.code(code_output)
-                                            assistant_output[-1]["content"] = code_output
-
-                                    assistant_output.append({
-                                        "type": "image",
-                                        "content":image_data_bytes_list
-                                    })
-                        
-                        elif isinstance(event, ThreadMessageCreated):
-                            assistant_output.append({"type": "text",
+                for event in stream:
+                    # print(f"[INFO] Event:\n {type(event)}")
+                    # if event == thread.run.step.delta:
+                    if isinstance(event, ThreadRunStepCreated):
+                        if event.data.step_details.type == "tool_calls":
+                            assistant_output.append({"type": "code_input",
                                                     "content": ""})
-                            assistant_text_box = st.empty()
+                            
+                            code_input_expander = st.status("Writing code ...", expanded=True)
+                            code_input_block = code_input_expander.empty()
 
-                        elif isinstance(event, ThreadMessageDelta):
-                            if isinstance(event.data.delta.content[0], TextDeltaBlock):
-                                assistant_text_box.empty()
-                                assistant_output[-1]["content"] += event.data.delta.content[0].text.value
-                                assistant_text_box.markdown(assistant_output[-1]["content"])
+                    if isinstance(event, ThreadRunStepDelta):
+                        if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
+                            code_interpreter = event.data.delta.step_details.tool_calls[0].code_interpreter
+                            code_input_delta = code_interpreter.input
+                            # print(f"[INFO] Code input delta: {code_input_delta}")
+                            if (code_input_delta is not None) and (code_input_delta != ""):
+                                assistant_output[-1]["content"] += code_input_delta
+                                code_input_block.empty()
+                                code_input_block.code(assistant_output[-1]["content"])
+                                # This part is added so that the 
+                            # code_input_expander.update(label="Code", state="complete", expanded=False)
 
-                    st.session_state.messages.append({"role": "assistant", "items": assistant_output})
+                    elif isinstance(event, ThreadRunStepCompleted):
+                        if isinstance(event.data.step_details, ToolCallsStepDetails):
+                            code_interpreter = event.data.step_details.tool_calls[0].code_interpreter
+                            code_input_expander.update(label="Code", state="complete", expanded=False)
 
-                st.success("Code generated successfully!")
+                            for output in code_interpreter.outputs:
+                                image_data_bytes_list = []
+                                
+                                if isinstance(output, CodeInterpreterOutputImage):
+                                    image_file_id = output.image.file_id                                   
+                                    image_data = client.files.content(image_file_id)
+                                    image_data_bytes = image_data.read()
+                                    st.image(image_data_bytes)
+                                    image_data_bytes_list.append(image_data_bytes)
+
+                                if isinstance(output, CodeInterpreterOutputLogs):
+                                    # print(f"[INFO] This is a log. Show it in the code window.")
+                                    assistant_output.append({"type": "code_input",
+                                                            "content": ""})
+                                    code_output = output.logs
+                                    with st.status("Results", state="complete"):
+                                        st.code(code_output)
+                                        assistant_output[-1]["content"] = code_output
+
+                                assistant_output.append({
+                                    "type": "image",
+                                    "content":image_data_bytes_list
+                                })
+                    
+                    elif isinstance(event, ThreadMessageCreated):
+                        assistant_output.append({"type": "text",
+                                                "content": ""})
+                        assistant_text_box = st.empty()
+
+                    elif isinstance(event, ThreadMessageDelta):
+                        if isinstance(event.data.delta.content[0], TextDeltaBlock):
+                            assistant_text_box.empty()
+                            assistant_output[-1]["content"] += event.data.delta.content[0].text.value
+                            assistant_text_box.markdown(assistant_output[-1]["content"])
+
+                st.session_state.messages.append({"role": "assistant", "items": assistant_output})
+
+            st.success("Code generated successfully!")
 
 
     st.stop()
