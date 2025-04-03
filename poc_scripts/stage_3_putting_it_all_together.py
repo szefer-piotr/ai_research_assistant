@@ -141,12 +141,36 @@ RESEARCH ASSISTANT
 # Two-column layout
 col1, col2 = st.columns(2)
 
+
+############################################################## SKIP THE STEP
+import ast
+with open('/home/piotr/projects/ai_research_assistant/misc/refined_hypotheses.txt', 'r') as file:
+    file_content = file.read()
+# Convert the string to a Python object (a list, in this case)
+data_list = ast.literal_eval(file_content)
+print(data_list)
+st.session_state['refined_hypotheses']['hypotheses'] = data_list
+############################################################################
+
+
 # See if all refined hypotheses have their final versions approved
-if all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
-    st.write("All hypotheses have a non-empty 'final_hypothesis'.")
-    st.stop()
-else:
-    print("Some hypotheses have an empty 'final_hypothesis'.")
+if st.session_state['refined_hypotheses']:
+    if all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
+        final_hypotheses_list = [hypo['final_hypothesis']['content'] for hypo in st.session_state['refined_hypotheses']['hypotheses']]
+        st.subheader("Analysis Plan Manager")  
+        for i, hypothesis in enumerate(final_hypotheses_list):
+            with st.expander(f"Hypothesis {i+1}"):
+                st.markdown(hypothesis)
+                button = st.button(f"Generate a plan to test the Hypothesis {i+1}.", key=hypothesis)
+                if button:
+                    st.write(f"Here is your plan: a, b, c, do it yourself {hypothesis}:P")
+        
+        st.stop()
+
+        if st.button("Save the refined hypotheses and prepare analysis plan"):
+            print(st.session_state['refined_hypotheses']['hypotheses'])
+    else:
+        print("Some hypotheses have an empty 'final_hypothesis'.")
 
 if st.session_state.hypotheses_refined:
     st.title("Hypothesis Manager")
