@@ -32,18 +32,55 @@ st.set_page_config(page_title="Research assistant",
                    layout="wide")
 
 data_summary_instructions = """
-Summarize the provided data.
-Provide column names and infer what these names can mean.
-For each column provide its name, description, and data type.
-Return a dictionary with number of elements equal to the number of columns with a following schema:
-{"column_name": <<name of the analysed column>> {"description": <<inferred description of the column>>,"type": <<type of the data>>, "unique_value_count": <<unique value count>>}},
+Task: Summarize the provided dataset by analyzing its columns.
+Extract and list all column names.
+For each column:
+Infer a human-readable description of what the column likely represents.
+Identify the data type (e.g., categorical, numeric, text, date).
+Count the number of unique values.
+Output Format: Return a Python dictionary where each key is the column name, and each value is another dictionary with the following structure:
+{
+  "column_name": <<name of the analyzed column>>,
+  "description": <<inferred description of the column>>,
+  "type": <<inferred data type>>,
+  "unique_value_count": <<number of unique values>>
+}
+The dictionary should contain one entry per column in the dataset.
 """
 
-hypotheses_refinining_instructions = """
-Based on the provided data summary perform a critical analysis of the provided hypotheses.
-Analyze whether the hypotheses can be tested using the provided data. Voice any issues the user may have.
-Suggest a refined version of each hypothesis. A hypothesis should be logical, should contain a metric that will be used to test it, and should define what sort of change can be expected in the metric.
-You should search the web to inform the proposed and refined hypotheses.
+processing_files_instruction = """
+Task: Based on the provided data summary, perform a critical analysis of each given hypothesis.
+Assess Testability: Determine whether each hypothesis can be tested using the provided data. Justify your reasoning by referencing the relevant variables and their formats.
+Identify Issues: Highlight any conceptual, statistical, or practical issues that may hinder testing — e.g., vague metrics, missing data, confounding variables, or unclear expected effects.
+Refine Hypotheses: Suggest a clear and testable version of each hypothesis. Each refined hypothesis should:
+Be logically structured and grounded in the data.
+Include a specific metric to be analyzed.
+Indicate the direction or nature of the expected change (e.g., increase/decrease, positive/negative correlation).
+Be framed in a way that is statistically testable.
+Support with External Knowledge: If needed, search the web or draw from scientific literature to refine or inform the hypotheses.
+"""
+
+refinig_instructions = """
+You are an expert in ecological research and hypothesis development. Your task is to help refine the hypotheses provided by the user.
+Instructions:
+Critically analyze the dataset shared by the user.
+Evaluate each hypothesis to determine whether it:
+Aligns with ecological theory or known patterns.
+Can be tested using the available data (based on variable types, structure, and coverage).
+If necessary, search the web for up-to-date ecological research or contextual knowledge to inform the refinement process.
+For each hypothesis, suggest a refined version that:
+Clearly defines the expected relationship or effect.
+Includes specific variables or metrics from the dataset.
+Is phrased in a way that is statistically testable.
+Important Constraints:
+Do not respond to any questions unrelated to the provided hypotheses.
+Use domain knowledge and data-driven reasoning to ensure each refined hypothesis is grounded in ecological theory and evidence.
+Output Format (for each hypothesis):
+Original Hypothesis:
+Can it be tested? (Yes/No with explanation)
+Issues or concerns:
+Refined Hypothesis:
+Supporting context (optional, if external sources were used):
 """
 
 data_summary_assistant = client.beta.assistants.create(
@@ -104,46 +141,70 @@ RESEARCH ASSISTANT
 # Two-column layout
 col1, col2 = st.columns(2)
 
+# See if all refined hypotheses have their final versions approved
+if all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
+    st.write("All hypotheses have a non-empty 'final_hypothesis'.")
+    st.stop()
+else:
+    print("Some hypotheses have an empty 'final_hypothesis'.")
 
 if st.session_state.hypotheses_refined:
     st.title("Hypothesis Manager")
 
-    print(f"\n\nUPDATED HYPOTHESES WITH HISTORY:\n{st.session_state.refined_hypotheses}\n\n")
+    # print(f"\n\nUPDATED HYPOTHESES WITH HISTORY:\n{st.session_state.refined_hypotheses}\n\n")
 
     updated_hypotheses = st.session_state.refined_hypotheses
 
     for i, hypothesis_obj in enumerate(updated_hypotheses["hypotheses"]):
-        with st.expander(f"{hypothesis_obj['title']}"):            
+        with st.expander(f"{hypothesis_obj['title']}"):
 
-            for step_j, step_obj in enumerate(hypothesis_obj["steps"]):
-                st.markdown(f"**Step {step_j+1}:** {step_obj['step']}")
-            
-            st.markdown("---")
-            
-            # Display history of the previous conversations about this particular hypothesis.
-            for msg in st.session_state['refined_hypotheses']['hypotheses'][i]['history']:
-                print(f"\n\nMESSAGE: {msg}")
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
+            if st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis']:
+                refined_hypothesis = st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis']
+                st.markdown(refined_hypothesis['content'])
 
-            prompt = st.chat_input(
-                "Discuss with the assistant to refine this hypothesis further.",
-                key=f"chat_input{i}")
-            if prompt:
-                st.session_state['refined_hypotheses']['hypotheses'][i]['history'].append(
-                    {"role":"user", "content": prompt}
-                )
-                history = st.session_state['refined_hypotheses']['hypotheses'][i]['history']
-                response = client.responses.create(
-                    model="gpt-4o",
-                    input=history,
-                    store=False
-                )
-                # st.write(response.output_text)
-                st.session_state['refined_hypotheses']['hypotheses'][i]['history'].append(
-                {"role":"assistant", "content": response.output_text}
-                )
-                st.rerun()
+            elif st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] == []:
+                for step_j, step_obj in enumerate(hypothesis_obj["steps"]):
+                    st.markdown(f"**Step {step_j+1}:** {step_obj['step']}")
+                
+                st.markdown("---")
+
+                # Display history of the previous conversations about this particular hypothesis.
+                for msg in st.session_state['refined_hypotheses']['hypotheses'][i]['history']:
+                    # print(f"\n\nMESSAGE: {msg}")
+                    with st.chat_message(msg["role"]):
+                        st.write(msg["content"])
+
+                prompt = st.chat_input(
+                    "Discuss with the assistant to refine this hypothesis further.",
+                    key=f"chat_input{i}")
+                
+                button = st.button("Accept the refined hypotheses", key=f"button{i}")
+                
+                if button:
+                    # Saves the last message from the history.
+                    last_message = st.session_state['refined_hypotheses']['hypotheses'][i]['history'][-1]
+                    print(f"\n\n[INFO] The last message in the refined hypotheses history:\n{last_message}\n")
+                    st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] = last_message
+                    st.rerun()
+
+
+                if prompt:
+                    st.session_state['refined_hypotheses']['hypotheses'][i]['history'].append(
+                        {"role":"user", "content": prompt}
+                    )
+                    history = st.session_state['refined_hypotheses']['hypotheses'][i]['history']
+                    response = client.responses.create(
+                        model="gpt-4o",
+                        instructions=refinig_instructions,
+                        input=history,
+                        tools=[{"type": "web_search_preview"}],
+                        store=False
+                    )
+                    # st.write(response.output_text)
+                    st.session_state['refined_hypotheses']['hypotheses'][i]['history'].append(
+                    {"role":"assistant", "content": response.output_text}
+                    )
+                    st.rerun()
 
                 # pass
 
@@ -212,6 +273,7 @@ if st.button("🚀 Process Files"):
             )
         
         with st.spinner("Refining your hypotheses..."):
+            
             # Step I summarize the data and save the summary
             run = client.beta.threads.runs.create_and_poll(
                 thread_id=st.session_state.thread_id,
@@ -233,7 +295,7 @@ if st.button("🚀 Process Files"):
                 for msg in messages_list:
                     for block in msg.content:
                         if block.type == 'text':
-                            print(block.text.value)
+                            # print(block.text.value)
                             # st.write(block.text.value)
                             assistant_response.append(block.text.value)
 
@@ -242,7 +304,7 @@ if st.button("🚀 Process Files"):
                     st.write(st.session_state.data_summary)
 
             prompt = f"""
-            Data summary preview: {st.session_state.data_summary}.\n\nHypotheses: {st.session_state.hypotheses}.\n\n {hypotheses_refinining_instructions}
+            Data summary preview: {st.session_state.data_summary}.\n\nHypotheses: {st.session_state.hypotheses}.\n\n {processing_files_instruction}
             Extract individual hypotheses from the text provided by the user and refine them one by one.            
             """
 
@@ -251,6 +313,7 @@ if st.button("🚀 Process Files"):
                 model="gpt-4o",
                 input=[{"role": "user",
                         "content": prompt}],
+                tools=[{"type": "web_search_preview"}],
                 text={
                     "format": {
                         "type": "json_schema",
@@ -294,8 +357,8 @@ if st.button("🚀 Process Files"):
             for i, hypothesis_obj in enumerate(updated_hypotheses["hypotheses"]):
                 # print(f"HYPOTHESIS OBJECT: {hypothesis_obj}")
                 # Add a conversation history to each element.
-                print(f"HYPOTHESIS OBJ TITLE: {hypothesis_obj['title']}")
-                print(f"HYPOTHESIS OBJ STEPS: {hypothesis_obj['steps']}")
+                # print(f"HYPOTHESIS OBJ TITLE: {hypothesis_obj['title']}")
+                # print(f"HYPOTHESIS OBJ STEPS: {hypothesis_obj['steps']}")
 
                 combined_str = hypothesis_obj['title'] + "\n\nHYPOTHESIS STEPS:\n"
                 for s in hypothesis_obj['steps']:
