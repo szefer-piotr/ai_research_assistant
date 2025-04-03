@@ -143,13 +143,14 @@ col1, col2 = st.columns(2)
 
 
 ############################################################## SKIP THE STEP
-import ast
-with open('/home/piotr/projects/ai_research_assistant/misc/refined_hypotheses.txt', 'r') as file:
-    file_content = file.read()
-# Convert the string to a Python object (a list, in this case)
-data_list = ast.literal_eval(file_content)
-print(data_list)
-st.session_state['refined_hypotheses']['hypotheses'] = data_list
+if not st.session_state['refined_hypotheses']:
+    import ast
+    with open('/home/piotr/projects/ai_research_assistant/misc/refined_hypotheses_with_key.txt', 'r') as file:
+        file_content = file.read()
+        # Convert the string to a Python object (a list, in this case)
+    data_list = ast.literal_eval(file_content)
+    print(data_list)
+    st.session_state['refined_hypotheses']['hypotheses'] = data_list
 ############################################################################
 
 
@@ -162,8 +163,15 @@ if st.session_state['refined_hypotheses']:
             with st.expander(f"Hypothesis {i+1}"):
                 st.markdown(hypothesis)
                 button = st.button(f"Generate a plan to test the Hypothesis {i+1}.", key=hypothesis)
+                message_history = st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis_history']
+                for message in message_history:
+                    with st.chat_message(message['role']):
+                        st.markdown(message['content'])
                 if button:
-                    st.write(f"Here is your plan: a, b, c, do it yourself {hypothesis}:P")
+                    prompt = f"Here is your plan: a, b, c, do it yourself {hypothesis}:P"
+                    st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis_history'].append(
+                        {"role": "assistant", "content": prompt}
+                    )
         
         st.stop()
 
@@ -394,6 +402,7 @@ if st.button("🚀 Process Files"):
                 
                 # Add a refined hypotheses to the dict.
                 updated_hypotheses['hypotheses'][i]['final_hypothesis'] = []
+                updated_hypotheses['hypotheses'][i]['final_hypothesis_history'] = []
 
             st.session_state.refined_hypotheses = updated_hypotheses
             st.session_state.hypotheses_refined = True
