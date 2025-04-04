@@ -83,6 +83,18 @@ Refined Hypothesis:
 Supporting context (optional, if external sources were used):
 """
 
+analyses_step_generation_instructions = """
+## Role
+- You are an **expert in ecological research and statistical analysis**, with proficiency in **R**.
+- You must apply the **highest quality statistical methods and approaches** in data analysis.
+- Your suggestions should be based on **best practices in ecological data analysis**.
+- Your role is to **provide guidance, suggestions, and recommendations** within your area of expertise.
+- Students will seek your assistance with **data analysis, interpretation, and statistical methods**.
+- Since students have **limited statistical knowledge**, your responses should be **simple and precise**.
+- Students also have **limited programming experience**, so provide **clear and detailed instructions**.
+"""
+
+
 data_summary_assistant = client.beta.assistants.create(
                     name="Data Summarizing Assistant",
                     temperature=0,
@@ -154,31 +166,117 @@ if not st.session_state['refined_hypotheses']:
 ############################################################################
 
 
-# See if all refined hypotheses have their final versions approved
 if st.session_state['refined_hypotheses']:
+    # Ensure each hypothesis has a "final_hypothesis_history" key
+    # (depending on your actual code, you may already do this earlier)
+    for hypo in st.session_state['refined_hypotheses']['hypotheses']:
+        hypo.setdefault('final_hypothesis_history', [])
+
+    # Check that each hypothesis has non-empty final_hypothesis
     if all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
-        final_hypotheses_list = [hypo['final_hypothesis']['content'] for hypo in st.session_state['refined_hypotheses']['hypotheses']]
-        st.subheader("Analysis Plan Manager")  
+        final_hypotheses_list = [
+            hypo['final_hypothesis']['content']
+            for hypo in st.session_state['refined_hypotheses']['hypotheses']
+        ]
+
+        st.subheader("Analysis Plan Manager")
+
+        # Loop over each hypothesis
         for i, hypothesis in enumerate(final_hypotheses_list):
             with st.expander(f"Hypothesis {i+1}"):
+
+                # Display the refined hypothesis text
                 st.markdown(hypothesis)
-                button = st.button(f"Generate a plan to test the Hypothesis {i+1}.", key=hypothesis)
+
+                # Get the plan message history for this hypothesis (if any)
                 message_history = st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis_history']
-                for message in message_history:
-                    with st.chat_message(message['role']):
-                        st.markdown(message['content'])
-                if button:
-                    prompt = f"Here is your plan: a, b, c, do it yourself {hypothesis}:P"
-                    st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis_history'].append(
-                        {"role": "assistant", "content": prompt}
-                    )
-        
+
+                # If there's already at least one plan message, we consider it "generated"
+                plan_already_generated = len(message_history) > 0
+
+                if plan_already_generated:
+                    # (A) Plan is already generated => Show the plan details
+                    for message in message_history:
+                        with st.chat_message(message['role']):
+                            plan = json.loads(message['content'])
+                            st.markdown(f"**{plan['analyses'][0]['title']}**")
+                            for step in plan["analyses"][0]["steps"]:
+                                st.markdown(f"- {step['step']}")
+
+                    # Show the Accept button if a plan is generated
+                    accept_button = st.button("Accept the plan", key=f"accept_plan_{i}")
+                    if accept_button:
+                        # On accept, store the last plan as final_hypothesis
+                        st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis'] = message_history[-1]
+                        st.rerun()
+
+                else:
+                    # (B) No plan generated => Show "Generate plan" button
+                    generate_button = st.button(f"Generate a plan to test the Hypothesis {i+1}.", key=f"generate_plan_{i}")
+                    if generate_button:
+                        plan_steps_generation_input = f"""
+                        Here is the data summary: {st.session_state.data_summary}\n
+                        Here is the hypothesis: {hypothesis}.
+                        """
+                        response = client.responses.create(
+                            model="gpt-4o",
+                            temperature=0,
+                            instructions=analyses_step_generation_instructions,
+                            input=plan_steps_generation_input,
+                            stream=False,
+                            text={
+                                "format": {
+                                    "type": "json_schema",
+                                    "name": "analyses",
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "analyses": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "title": {"type": "string"},
+                                                        "steps": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "step": {"type": "string"}
+                                                                },
+                                                                "required": ["step"],
+                                                                "additionalProperties": False
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": ["title", "steps"],
+                                                    "additionalProperties": False
+                                                }
+                                            }
+                                        },
+                                        "required": ["analyses"],
+                                        "additionalProperties": False
+                                    },
+                                    "strict": True
+                                }
+                            },
+                            store=False
+                        )
+                        # Save the newly generated plan into the message_history
+                        new_plan = {"role": "assistant", "content": response.output_text}
+                        st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis_history'].append(new_plan)
+
+                        # Rerun the script so that next time we detect the plan is generated
+                        st.rerun()
+
         st.stop()
 
         if st.button("Save the refined hypotheses and prepare analysis plan"):
             print(st.session_state['refined_hypotheses']['hypotheses'])
+
     else:
         print("Some hypotheses have an empty 'final_hypothesis'.")
+
 
 if st.session_state.hypotheses_refined:
     st.title("Hypothesis Manager")
@@ -204,7 +302,7 @@ if st.session_state.hypotheses_refined:
                 for msg in st.session_state['refined_hypotheses']['hypotheses'][i]['history']:
                     # print(f"\n\nMESSAGE: {msg}")
                     with st.chat_message(msg["role"]):
-                        st.write(msg["content"])
+                        st.markdown(msg["content"])
 
                 prompt = st.chat_input(
                     "Discuss with the assistant to refine this hypothesis further.",
@@ -273,7 +371,6 @@ with col2:
         st.session_state.hypotheses_uploaded = True
         with st.expander("Hypotheses preview."):
             st.text_area("File content", text, height=182)
-
 
 
 # Three columns to center the button in the middle one
