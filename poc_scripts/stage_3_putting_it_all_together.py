@@ -129,7 +129,7 @@ if "refined_hypotheses" not in st.session_state:
 # if "refined_hypotheses" not in st.session_state:
 #     st.session_state.refined_hypotheses = {"hypotheses": [{"title": "Higher bee diversity and abundance in rural parks", "steps": [{"step": "Current Hypothesis: Wild bee diversity and abundance will be higher in rural areas compared to urban landscapes."}, {"step": "Data Support: The dataset includes 'Species code', 'Floral richness', 'Landscape type', and 'Population density' which can be used to compare rural vs. urban sites."}, {"step": "Issues: The dataset lacks direct measures of bee abundance. Observations may not be exhaustive."}, {"step": "Refined Hypothesis: Bee species richness ('Species.code') and floral richness will be higher in sites classified as rural ('Landscape.type'). 'Floral richness' should positively correlate with 'Species.code' in rural areas."}], "history": [], "final_hypotheses": []}, {"title": "Functional traits filtering by urbanization", "steps": [{"step": "Current Hypothesis: Bee communities in highly urbanized areas will be dominated by smaller, generalist bees."}, {"step": "Data Support: The dataset contains 'Mean.body.size', 'Nesting place', and 'Floral specificity' which can reflect generalist vs. specialist traits."}, {"step": "Issues: Lack of detailed trait data for specific bees to make comprehensive conclusions about all traits."}, {"step": "Refined Hypothesis: Sites with higher 'Impervious.surface.area' and 'Population.density' will have a higher proportion of small-bodied bees ('Mean.body.size') and generalists (e.g., 'Floral specificity')."}], "history": [], "final_hypotheses": []}, {"title": "Negative response of bee diversity and abundance to urbanization", "steps": [{"step": "Current Hypothesis: Bee abundance and diversity will negatively correlate with urbanization."}, {"step": "Data Support: 'Area size', 'Impervious surface area', and 'Population density' can help model urbanization, while 'Species.code' can reflect diversity."}, {"step": "Issues: Need more abundance measures. 'Species.code' provides richness, not abundance."}, {"step": "Refined Hypothesis: Richness of bee species ('Species.code') will inversely correlate with 'Impervious.surface.area' and 'Population.density'. Sites with more floral resources will have higher richness."}], "history": [], "final_hypotheses": []}, {"title": "Sex-specific responses to urbanization", "steps": [{"step": "Current Hypothesis: Female and male bees will exhibit different responses to urbanization."}, {"step": "Data Support: The 'Sex' column can reveal differences between sexes in urban vs rural contexts."}, {"step": "Issues: Dataset does not provide abundance data needed for sex-specific analyses."}, {"step": "Refined Hypothesis: Urban sites ('Population.density') will exhibit a lower female-to-male ratio ('Sex') compared to rural sites due to resource availability and nesting conditions."}], "history": [], "final_hypotheses": []}, {"title": "Beta diversity driven by turnover or nestedness", "steps": [{"step": "Current Hypothesis: \u03b2-diversity between urban and rural parks results from species turnover."}, {"step": "Data Support: The dataset provides 'Species.code' and site identifiers which can be used to calculate \u03b2-diversity."}, {"step": "Issues: Lack of explicit abundance data limits quantitative nestedness analysis."}, {"step": "Refined Hypothesis: \u03b2-diversity calculated based on 'Species.code' between rural and urban ('Landscape.type') will show more species turnover due to habitat differences."}], "history": [], "final_hypotheses": []}, {"title": "Relative contributions to gamma diversity", "steps": [{"step": "Current Hypothesis: \u03b1-diversity and \u03b2-diversity will vary, influencing \u03b3-diversity."}, {"step": "Data Support: 'Species.code' can provide insights into \u03b1-diversity and comparisons between sites for \u03b2-diversity."}, {"step": "Issues: Lack of abundance and detailed species-level richness data limits accurate \u03b3-diversity estimates."}, {"step": "Refined Hypothesis: Combine within-site species diversity ('Species.code') with between-site diversity measures to assess regional diversity influenced by landscape differences ('Landscape.type')."}], "history": [], "final_hypotheses": []}, {"title": "Trait\u2013environment interactions", "steps": [{"step": "Current Hypothesis: Specific ecological traits will show associations with environmental variables."}, {"step": "Data Support: Traits like 'Nesting place', 'Mean.body.size', and 'Social behavior' can be evaluated against 'Impervious.surface.area' and 'Landscape.diversity'."}, {"step": "Issues: Specific traits data may be too broad for nuanced analyses without additional context."}, {"step": "Refined Hypothesis: Cavity-nesting bees ('Nesting place') will associate more with urban environments ('Impervious.surface.area'), while ground-nesting bees will prevail in rural areas ('Grasslands')."}], "history": [], "final_hypotheses": []}]}
 if "approved_hypotheses" not in st.session_state:
-    st.session_state.approved_hypotheses = {}
+    st.session_state.approved_hypotheses = []
 
 
 # UI
@@ -161,19 +161,56 @@ if not st.session_state['refined_hypotheses']:
         file_content = file.read()
         # Convert the string to a Python object (a list, in this case)
     data_list = ast.literal_eval(file_content)
-    print(data_list)
+    # print(data_list)
     st.session_state['refined_hypotheses']['hypotheses'] = data_list
 ############################################################################
 
 
 if st.session_state['refined_hypotheses']:
-    # Ensure each hypothesis has a "final_hypothesis_history" key
-    # (depending on your actual code, you may already do this earlier)
     for hypo in st.session_state['refined_hypotheses']['hypotheses']:
         hypo.setdefault('final_hypothesis_history', [])
 
+
+    # Check if approved hypotheses have the same length as refined hypotheses
+    if len(st.session_state['approved_hypotheses']) == len(st.session_state['refined_hypotheses']['hypotheses']):
+        print(f"\n[INFO] All approved hypotheses are there:\n{st.session_state['approved_hypotheses']}\n")
+        st.title("Analysis Manager")
+        with st.sidebar:
+            st.markdown(
+                """
+                <span style='font-size:16px; font-weight:600;'>📄 Approved hypotheses</span>
+                """, unsafe_allow_html=True)
+            
+            selected_hypothesis = st.selectbox(
+                "Select hypothesis to run the analysis", 
+                options=[hypothesis["hypothesis_title"] for hypothesis in st.session_state['approved_hypotheses']]
+                )
+
+            print(f"\n[INFO] THE SELECTED HYPOTHESIS: {selected_hypothesis}")
+
+            analyses_steps = next(
+                (item for item in st.session_state['approved_hypotheses'] if item["hypothesis_title"] == selected_hypothesis), None
+            )
+
+            analysis_dict = json.loads(analyses_steps["analysis_plan"]['content'])
+
+            # print(f"\n[INFO] THE ANALYSIS DICT:\n{analysis_dict}\n")
+
+            print(f"\n\nAnalysis DICT: {analysis_dict['analyses'][0]}\n\n")
+            # print(type(analysis_dict["analyses"][0]))
+
+            # analysis = json.loads(analysis_dict["analyses"][0])
+
+            title = analysis_dict['analyses'][0]["title"]
+            steps = analysis_dict['analyses'][0]["steps"]
+            st.markdown(f"**{title}**")
+            for step in steps:
+                st.markdown(f"- {step['step']}")
+
+        st.stop()
+
     # Check that each hypothesis has non-empty final_hypothesis
-    if all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
+    elif all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
         final_hypotheses_list = [
             hypo['final_hypothesis']['content']
             for hypo in st.session_state['refined_hypotheses']['hypotheses']
@@ -207,7 +244,9 @@ if st.session_state['refined_hypotheses']:
                     accept_button = st.button("Accept the plan", key=f"accept_plan_{i}")
                     if accept_button:
                         # On accept, store the last plan as final_hypothesis
+                        st.session_state.approved_hypotheses.append({"hypothesis_title": hypothesis, "analysis_plan": message_history[-1]})
                         st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis'] = message_history[-1]
+
                         st.rerun()
 
                 else:
@@ -272,7 +311,9 @@ if st.session_state['refined_hypotheses']:
         st.stop()
 
         if st.button("Save the refined hypotheses and prepare analysis plan"):
-            print(st.session_state['refined_hypotheses']['hypotheses'])
+            # print(st.session_state['refined_hypotheses']['hypotheses'])
+            print(f"\n This should save the hypotheses to the approved_hpotheses:\n")
+            print(f"\n\n[INFO] The final hypotheses:\n{st.session_state['refined_hypotheses']['hypotheses']}\n")
 
     else:
         print("Some hypotheses have an empty 'final_hypothesis'.")
@@ -314,6 +355,8 @@ if st.session_state.hypotheses_refined:
                     # Saves the last message from the history.
                     last_message = st.session_state['refined_hypotheses']['hypotheses'][i]['history'][-1]
                     print(f"\n\n[INFO] The last message in the refined hypotheses history:\n{last_message}\n")
+                    # Here the last hypotheses should be saved as accepted_hypotheses
+                    st.session_state['approved_hypotheses'].append(last_message)
                     st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] = last_message
                     st.rerun()
 
