@@ -6,6 +6,10 @@ import json
 import time
 import pandas as pd
 
+import base64
+
+from assistant_event_handlers import EventHandler
+
 from openai.types.beta.assistant_stream_event import (
     ThreadRunStepCreated,
     ThreadRunStepDelta,
@@ -110,6 +114,8 @@ if "hypotheses_uploaded" not in st.session_state:
     st.session_state.hypotheses_uploaded = False
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = []
+if "analysis_execution_thread_id" not in st.session_state:
+    st.session_state.analysis_execution_thread_id = []
 if "files" not in st.session_state:
     st.session_state.files = {}
 if "file_ids" not in st.session_state:
@@ -130,7 +136,8 @@ if "refined_hypotheses" not in st.session_state:
 #     st.session_state.refined_hypotheses = {"hypotheses": [{"title": "Higher bee diversity and abundance in rural parks", "steps": [{"step": "Current Hypothesis: Wild bee diversity and abundance will be higher in rural areas compared to urban landscapes."}, {"step": "Data Support: The dataset includes 'Species code', 'Floral richness', 'Landscape type', and 'Population density' which can be used to compare rural vs. urban sites."}, {"step": "Issues: The dataset lacks direct measures of bee abundance. Observations may not be exhaustive."}, {"step": "Refined Hypothesis: Bee species richness ('Species.code') and floral richness will be higher in sites classified as rural ('Landscape.type'). 'Floral richness' should positively correlate with 'Species.code' in rural areas."}], "history": [], "final_hypotheses": []}, {"title": "Functional traits filtering by urbanization", "steps": [{"step": "Current Hypothesis: Bee communities in highly urbanized areas will be dominated by smaller, generalist bees."}, {"step": "Data Support: The dataset contains 'Mean.body.size', 'Nesting place', and 'Floral specificity' which can reflect generalist vs. specialist traits."}, {"step": "Issues: Lack of detailed trait data for specific bees to make comprehensive conclusions about all traits."}, {"step": "Refined Hypothesis: Sites with higher 'Impervious.surface.area' and 'Population.density' will have a higher proportion of small-bodied bees ('Mean.body.size') and generalists (e.g., 'Floral specificity')."}], "history": [], "final_hypotheses": []}, {"title": "Negative response of bee diversity and abundance to urbanization", "steps": [{"step": "Current Hypothesis: Bee abundance and diversity will negatively correlate with urbanization."}, {"step": "Data Support: 'Area size', 'Impervious surface area', and 'Population density' can help model urbanization, while 'Species.code' can reflect diversity."}, {"step": "Issues: Need more abundance measures. 'Species.code' provides richness, not abundance."}, {"step": "Refined Hypothesis: Richness of bee species ('Species.code') will inversely correlate with 'Impervious.surface.area' and 'Population.density'. Sites with more floral resources will have higher richness."}], "history": [], "final_hypotheses": []}, {"title": "Sex-specific responses to urbanization", "steps": [{"step": "Current Hypothesis: Female and male bees will exhibit different responses to urbanization."}, {"step": "Data Support: The 'Sex' column can reveal differences between sexes in urban vs rural contexts."}, {"step": "Issues: Dataset does not provide abundance data needed for sex-specific analyses."}, {"step": "Refined Hypothesis: Urban sites ('Population.density') will exhibit a lower female-to-male ratio ('Sex') compared to rural sites due to resource availability and nesting conditions."}], "history": [], "final_hypotheses": []}, {"title": "Beta diversity driven by turnover or nestedness", "steps": [{"step": "Current Hypothesis: \u03b2-diversity between urban and rural parks results from species turnover."}, {"step": "Data Support: The dataset provides 'Species.code' and site identifiers which can be used to calculate \u03b2-diversity."}, {"step": "Issues: Lack of explicit abundance data limits quantitative nestedness analysis."}, {"step": "Refined Hypothesis: \u03b2-diversity calculated based on 'Species.code' between rural and urban ('Landscape.type') will show more species turnover due to habitat differences."}], "history": [], "final_hypotheses": []}, {"title": "Relative contributions to gamma diversity", "steps": [{"step": "Current Hypothesis: \u03b1-diversity and \u03b2-diversity will vary, influencing \u03b3-diversity."}, {"step": "Data Support: 'Species.code' can provide insights into \u03b1-diversity and comparisons between sites for \u03b2-diversity."}, {"step": "Issues: Lack of abundance and detailed species-level richness data limits accurate \u03b3-diversity estimates."}, {"step": "Refined Hypothesis: Combine within-site species diversity ('Species.code') with between-site diversity measures to assess regional diversity influenced by landscape differences ('Landscape.type')."}], "history": [], "final_hypotheses": []}, {"title": "Trait\u2013environment interactions", "steps": [{"step": "Current Hypothesis: Specific ecological traits will show associations with environmental variables."}, {"step": "Data Support: Traits like 'Nesting place', 'Mean.body.size', and 'Social behavior' can be evaluated against 'Impervious.surface.area' and 'Landscape.diversity'."}, {"step": "Issues: Specific traits data may be too broad for nuanced analyses without additional context."}, {"step": "Refined Hypothesis: Cavity-nesting bees ('Nesting place') will associate more with urban environments ('Impervious.surface.area'), while ground-nesting bees will prevail in rural areas ('Grasslands')."}], "history": [], "final_hypotheses": []}]}
 if "approved_hypotheses" not in st.session_state:
     st.session_state.approved_hypotheses = []
-
+if 'analysis_outputs' not in st.session_state:
+    st.session_state['analysis_outputs'] = {}
 
 # UI
 # Force a font accross the app
@@ -175,7 +182,27 @@ if st.session_state['refined_hypotheses']:
     if len(st.session_state['approved_hypotheses']) == len(st.session_state['refined_hypotheses']['hypotheses']):
         print(f"\n[INFO] All approved hypotheses are there:\n{st.session_state['approved_hypotheses']}\n")
         st.title("Analysis Manager")
+
+        # Create an assistant to execute the analysis
+        analysis_assistant = client.beta.assistants.create(
+            name="Analysis Assistant",
+            temperature=0,
+            instructions="""
+            You are an expert in ecological research and statistical analysis in Python. 
+            Your task is to execute the analysis plan provided by the user.
+            """,
+            tools=[{"type": "code_interpreter"}],
+            model="gpt-4o"
+        )
+
+        # Create a thread
+        thread = client.beta.threads.create()
+        st.session_state.analysis_execution_thread_id = thread.id
+
+        analysis_container = st.container()
+
         with st.sidebar:
+            
             st.markdown(
                 """
                 <span style='font-size:16px; font-weight:600;'>📄 Approved hypotheses</span>
@@ -204,8 +231,110 @@ if st.session_state['refined_hypotheses']:
             title = analysis_dict['analyses'][0]["title"]
             steps = analysis_dict['analyses'][0]["steps"]
             st.markdown(f"**{title}**")
+            
             for step in steps:
                 st.markdown(f"- {step['step']}")
+
+            if st.button("Run the analysis"):
+                
+                with st.spinner("Running the analysis..."):            
+                    
+                    # Create a message in the thread
+                    message = client.beta.threads.messages.create(
+                        thread_id=st.session_state.analysis_execution_thread_id,
+                        role="user",
+                        content=f"\n\nThe analysis plan:\n{analysis_dict['analyses'][0]}\n",
+                    )
+
+                    client.beta.threads.update(
+                        thread_id=st.session_state.analysis_execution_thread_id,
+                        tool_resources={"code_interpreter": {"file_ids": [file_id for file_id in st.session_state.file_ids]}}
+                    )
+
+                    print(f"\n\n[INFO] The analysis plan:\n{analysis_dict['analyses'][0]}\n")
+                    
+                    stream = client.beta.threads.runs.create(
+                        thread_id=thread.id,
+                        assistant_id=analysis_assistant.id,
+                        instructions="Execute the analysis plan.",
+                        tool_choice={"type": "code_interpreter"},
+                        stream=True,
+                    )
+                    
+                    executor_output = []
+                    
+                    for event in stream:
+                        if isinstance(event, ThreadRunStepCreated):
+                            if event.data.step_details.type == "tool_calls":
+                                executor_output.append({"type": "code_input",
+                                                        "content": ""})
+
+                                code_input_expander= st.status("Writing code ⏳ ...", expanded=True)
+                                code_input_block = code_input_expander.empty()
+
+                        if isinstance(event, ThreadRunStepDelta):
+                            if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
+                                code_interpretor = event.data.delta.step_details.tool_calls[0].code_interpreter
+                                code_input_delta = code_interpretor.input
+                                if (code_input_delta is not None) and (code_input_delta != ""):
+                                    executor_output[-1]["content"] += code_input_delta
+                                    code_input_block.empty()
+                                    code_input_block.code(executor_output[-1]["content"])
+
+                        elif isinstance(event, ThreadRunStepCompleted):
+                            if isinstance(event.data.step_details, ToolCallsStepDetails):
+                                code_interpretor = event.data.step_details.tool_calls[0].code_interpreter
+                                if code_interpretor.outputs:
+                                    print("***"*10)
+                                    print(code_interpretor)
+                                    print("***"*10)
+                                    code_interpretor_outputs = code_interpretor.outputs[0]
+                                    code_input_expander.update(label="Code", state="complete", expanded=False)
+                                    # Image
+                                    if isinstance(code_interpretor_outputs, CodeInterpreterOutputImage):
+                                        image_html_list = []
+                                        for output in code_interpretor.outputs:
+                                            image_file_id = output.image.file_id
+                                            image_data = client.files.content(image_file_id)
+                                            
+                                            # Save file
+                                            image_data_bytes = image_data.read()
+                                            with open(f"images/{image_file_id}.png", "wb") as file:
+                                                file.write(image_data_bytes)
+
+                                            # Open file and encode as data
+                                            file_ = open(f"images/{image_file_id}.png", "rb")
+                                            contents = file_.read()
+                                            data_url = base64.b64encode(contents).decode("utf-8")
+                                            file_.close()
+
+                                            # Display image
+                                            image_html = f'<p align="center"><img src="data:image/png;base64,{data_url}" width=600></p>'
+                                            st.html(image_html)
+
+                                            image_html_list.append(image_html)
+
+                                        executor_output.append({"type": "image",
+                                                                "content": image_html_list})
+                                    # Console log
+                                    elif isinstance(code_interpretor_outputs, CodeInterpreterOutputLogs):
+                                        executor_output.append({"type": "code_output",
+                                                                "content": ""})
+                                        code_output = code_interpretor.outputs[0].logs
+                                        with st.status("Results", state="complete"):
+                                            st.code(code_output)    
+                                            executor_output[-1]["content"] = code_output   
+
+                        elif isinstance(event, ThreadMessageCreated):
+                            executor_output.append({"type": "text",
+                                                    "content": ""})
+                            assistant_text_box = st.empty()
+
+                        elif isinstance(event, ThreadMessageDelta):
+                            if isinstance(event.data.delta.content[0], TextDeltaBlock):
+                                assistant_text_box.empty()
+                                executor_output[-1]["content"] += event.data.delta.content[0].text.value
+                                assistant_text_box.markdown(executor_output[-1]["content"])
 
         st.stop()
 
