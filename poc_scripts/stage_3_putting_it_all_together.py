@@ -6,6 +6,8 @@ import json
 import time
 import pandas as pd
 
+import pprint
+
 import base64
 
 from assistant_event_handlers import EventHandler
@@ -100,13 +102,24 @@ analyses_step_generation_instructions = """
 
 
 data_summary_assistant = client.beta.assistants.create(
-                    name="Data Summarizing Assistant",
-                    temperature=0,
-                    instructions=data_summary_instructions,
-                    tools=[{"type": "code_interpreter"}],
-                    model="gpt-4o"
-                )
+    name="Data Summarizing Assistant",
+    temperature=0,
+    instructions=data_summary_instructions,
+    tools=[{"type": "code_interpreter"}],
+    model="gpt-4o"
+)
 
+# Create an assistant to execute the analysis
+analysis_assistant = client.beta.assistants.create(
+    name="Analysis Assistant",
+    temperature=0,
+    instructions="""
+    You are an expert in ecological data analysisi and statistical analysis in Python. 
+    Your task is to write and execute every analysis step in a plan provided by the user.
+    """,
+    tools=[{"type": "code_interpreter"}],
+    model="gpt-4o"
+)
 
 if "data_uploaded" not in st.session_state:
     st.session_state.data_uploaded = False
@@ -170,7 +183,7 @@ if not st.session_state['refined_hypotheses']:
     data_list = ast.literal_eval(file_content)
     # print(data_list)
     st.session_state['refined_hypotheses']['hypotheses'] = data_list
-############################################################################
+# ############################################################################
 
 
 if st.session_state['refined_hypotheses']:
@@ -180,21 +193,9 @@ if st.session_state['refined_hypotheses']:
 
     # Check if approved hypotheses have the same length as refined hypotheses
     if len(st.session_state['approved_hypotheses']) == len(st.session_state['refined_hypotheses']['hypotheses']):
-        print(f"\n[INFO] All approved hypotheses are there:\n{st.session_state['approved_hypotheses']}\n")
-        st.title("Analysis Manager")
-
-        # Create an assistant to execute the analysis
-        analysis_assistant = client.beta.assistants.create(
-            name="Analysis Assistant",
-            temperature=0,
-            instructions="""
-            You are an expert in ecological research and statistical analysis in Python. 
-            Your task is to execute the analysis plan provided by the user.
-            """,
-            tools=[{"type": "code_interpreter"}],
-            model="gpt-4o"
-        )
-
+        print(f"\n[INFO] All approved hypotheses are there:\n")
+        pprint.pprint(st.session_state['approved_hypotheses'])
+        
         # Create a thread
         thread = client.beta.threads.create()
         st.session_state.analysis_execution_thread_id = thread.id
@@ -210,35 +211,30 @@ if st.session_state['refined_hypotheses']:
             
             selected_hypothesis = st.selectbox(
                 "Select hypothesis to run the analysis", 
-                options=[hypothesis["hypothesis_title"] for hypothesis in st.session_state['approved_hypotheses']]
+                options=[hypothesis["hypothesis_title"] for hypothesis in st.session_state.approved_hypotheses]
                 )
-
-            print(f"\n[INFO] THE SELECTED HYPOTHESIS: {selected_hypothesis}")
+            st.write(f"SELECTED HYPOTHESIS: {selected_hypothesis}")
 
             analyses_steps = next(
-                (item for item in st.session_state['approved_hypotheses'] if item["hypothesis_title"] == selected_hypothesis), None
+                (item for item in st.session_state['approved_hypotheses'] if item["hypothesis_title"] == selected_hypothesis), 
+                None
             )
 
             analysis_dict = json.loads(analyses_steps["analysis_plan"]['content'])
 
-            # print(f"\n[INFO] THE ANALYSIS DICT:\n{analysis_dict}\n")
-
-            print(f"\n\nAnalysis DICT: {analysis_dict['analyses'][0]}\n\n")
-            # print(type(analysis_dict["analyses"][0]))
-
-            # analysis = json.loads(analysis_dict["analyses"][0])
-
+            st.write(f"Analysis DICT: {analysis_dict['analyses'][0]}")
             title = analysis_dict['analyses'][0]["title"]
             steps = analysis_dict['analyses'][0]["steps"]
-            st.markdown(f"**{title}**")
             
+            st.markdown(f"**{title}**") 
             for step in steps:
                 st.markdown(f"- {step['step']}")
 
+            if selected_hypothesis not in st.session_state['analysis_outputs']:
+                st.session_state['analysis_outputs'][selected_hypothesis] = []
+
             if st.button("Run the analysis"):
-                
                 with st.spinner("Running the analysis..."):            
-                    
                     # Create a message in the thread
                     message = client.beta.threads.messages.create(
                         thread_id=st.session_state.analysis_execution_thread_id,
@@ -250,91 +246,111 @@ if st.session_state['refined_hypotheses']:
                         thread_id=st.session_state.analysis_execution_thread_id,
                         tool_resources={"code_interpreter": {"file_ids": [file_id for file_id in st.session_state.file_ids]}}
                     )
-
-                    print(f"\n\n[INFO] The analysis plan:\n{analysis_dict['analyses'][0]}\n")
                     
                     stream = client.beta.threads.runs.create(
-                        thread_id=thread.id,
+                        thread_id=st.session_state.analysis_execution_thread_id,
                         assistant_id=analysis_assistant.id,
-                        instructions="Execute the analysis plan.",
+                        instructions="Execute the analysis plan on the dataset attached to a thread.",
                         tool_choice={"type": "code_interpreter"},
                         stream=True,
                     )
                     
                     executor_output = []
                     
-                    for event in stream:
-                        if isinstance(event, ThreadRunStepCreated):
-                            if event.data.step_details.type == "tool_calls":
-                                executor_output.append({"type": "code_input",
-                                                        "content": ""})
+                     # 4) Process events as they come in
+                for event in stream:
+                    # Step created => add new "code_input" block
+                    if isinstance(event, ThreadRunStepCreated):
+                        if event.data.step_details.type == "tool_calls":
+                            st.session_state['analysis_outputs'][selected_hypothesis].append({
+                                "type": "code_input",
+                                "content": ""
+                            })
+                            # Example: if you have a custom st.status or placeholders:
+                            # code_input_expander = st.status("Writing code ⏳ ...", expanded=True)
+                            # code_input_block = code_input_expander.empty()
 
-                                code_input_expander= st.status("Writing code ⏳ ...", expanded=True)
-                                code_input_block = code_input_expander.empty()
+                    # Step delta => streaming code input
+                    elif isinstance(event, ThreadRunStepDelta):
+                        code_interpretor = event.data.delta.step_details.tool_calls[0].code_interpreter
+                        if code_interpretor is not None:
+                            code_input_delta = code_interpretor.input
+                            if code_input_delta:
+                                st.session_state['analysis_outputs'][selected_hypothesis][-1]["content"] += code_input_delta
+                                # If you have a placeholder to show code in real-time:
+                                # code_input_block.empty()
+                                # code_input_block.code(st.session_state['analysis_outputs'][selected_hypothesis][-1]["content"])
 
-                        if isinstance(event, ThreadRunStepDelta):
-                            if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
-                                code_interpretor = event.data.delta.step_details.tool_calls[0].code_interpreter
-                                code_input_delta = code_interpretor.input
-                                if (code_input_delta is not None) and (code_input_delta != ""):
-                                    executor_output[-1]["content"] += code_input_delta
-                                    code_input_block.empty()
-                                    code_input_block.code(executor_output[-1]["content"])
+                    # Step completed => we may have outputs
+                    elif isinstance(event, ThreadRunStepCompleted):
+                        if isinstance(event.data.step_details, ToolCallsStepDetails):
+                            code_interpretor = event.data.step_details.tool_calls[0].code_interpreter
+                            if code_interpretor.outputs:
+                                output_obj = code_interpretor.outputs[0]
 
-                        elif isinstance(event, ThreadRunStepCompleted):
-                            if isinstance(event.data.step_details, ToolCallsStepDetails):
-                                code_interpretor = event.data.step_details.tool_calls[0].code_interpreter
-                                if code_interpretor.outputs:
-                                    print("***"*10)
-                                    print(code_interpretor)
-                                    print("***"*10)
-                                    code_interpretor_outputs = code_interpretor.outputs[0]
-                                    code_input_expander.update(label="Code", state="complete", expanded=False)
-                                    # Image
-                                    if isinstance(code_interpretor_outputs, CodeInterpreterOutputImage):
-                                        image_html_list = []
-                                        for output in code_interpretor.outputs:
-                                            image_file_id = output.image.file_id
-                                            image_data = client.files.content(image_file_id)
-                                            
-                                            # Save file
-                                            image_data_bytes = image_data.read()
-                                            with open(f"images/{image_file_id}.png", "wb") as file:
-                                                file.write(image_data_bytes)
+                                # CodeInterpreterOutputImage
+                                if isinstance(output_obj, CodeInterpreterOutputImage):
+                                    image_html_list = []
+                                    for output in code_interpretor.outputs:
+                                        image_file_id = output.image.file_id
+                                        image_data = client.files.content(image_file_id)
+                                        
+                                        # Save image locally
+                                        image_bytes = image_data.read()
+                                        with open(f"images/{image_file_id}.png", "wb") as f:
+                                            f.write(image_bytes)
 
-                                            # Open file and encode as data
-                                            file_ = open(f"images/{image_file_id}.png", "rb")
-                                            contents = file_.read()
-                                            data_url = base64.b64encode(contents).decode("utf-8")
-                                            file_.close()
+                                        # Convert to base64 for inline display
+                                        with open(f"images/{image_file_id}.png", "rb") as f:
+                                            b64_data = base64.b64encode(f.read()).decode("utf-8")
 
-                                            # Display image
-                                            image_html = f'<p align="center"><img src="data:image/png;base64,{data_url}" width=600></p>'
-                                            st.html(image_html)
+                                        image_html = f'<p align="center"><img src="data:image/png;base64,{b64_data}" width=600></p>'
+                                        image_html_list.append(image_html)
 
-                                            image_html_list.append(image_html)
+                                    st.session_state['analysis_outputs'][selected_hypothesis].append({
+                                        "type": "image",
+                                        "content": image_html_list
+                                    })
 
-                                        executor_output.append({"type": "image",
-                                                                "content": image_html_list})
-                                    # Console log
-                                    elif isinstance(code_interpretor_outputs, CodeInterpreterOutputLogs):
-                                        executor_output.append({"type": "code_output",
-                                                                "content": ""})
-                                        code_output = code_interpretor.outputs[0].logs
-                                        with st.status("Results", state="complete"):
-                                            st.code(code_output)    
-                                            executor_output[-1]["content"] = code_output   
+                                # CodeInterpreterOutputLogs => console logs
+                                elif isinstance(output_obj, CodeInterpreterOutputLogs):
+                                    logs = output_obj.logs
+                                    st.session_state['analysis_outputs'][selected_hypothesis].append({
+                                        "type": "code_output",
+                                        "content": logs
+                                    })
 
-                        elif isinstance(event, ThreadMessageCreated):
-                            executor_output.append({"type": "text",
-                                                    "content": ""})
-                            assistant_text_box = st.empty()
+                    # ThreadMessageCreated => new text item
+                    elif isinstance(event, ThreadMessageCreated):
+                        st.session_state['analysis_outputs'][selected_hypothesis].append({
+                            "type": "text",
+                            "content": ""
+                        })
 
-                        elif isinstance(event, ThreadMessageDelta):
-                            if isinstance(event.data.delta.content[0], TextDeltaBlock):
-                                assistant_text_box.empty()
-                                executor_output[-1]["content"] += event.data.delta.content[0].text.value
-                                assistant_text_box.markdown(executor_output[-1]["content"])
+                    # ThreadMessageDelta => streaming text
+                    elif isinstance(event, ThreadMessageDelta):
+                        msg = event.data.delta.content[0]
+                        if hasattr(msg, "text") and msg.text.value:
+                            text_value = msg.text.value
+                            st.session_state['analysis_outputs'][selected_hypothesis][-1]["content"] += text_value
+            
+            with analysis_container:
+                st.markdown("## Analysis Output")
+
+                # Retrieve stored outputs for the currently selected hypothesis
+                outputs = st.session_state['analysis_outputs'].get(selected_hypothesis, [])
+                for item in outputs:
+                    if item["type"] == "text":
+                        st.markdown(item["content"])
+                    elif item["type"] == "code_input":
+                        st.code(item["content"])
+                    elif item["type"] == "code_output":
+                        st.code(item["content"])
+                    elif item["type"] == "image":
+                        # Each 'content' is a list of HTML strings containing base64 images
+                        for image_html in item["content"]:
+                            # Use unsafe_allow_html to render inline HTML
+                            st.markdown(image_html, unsafe_allow_html=True)
 
         st.stop()
 
@@ -361,7 +377,6 @@ if st.session_state['refined_hypotheses']:
                 plan_already_generated = len(message_history) > 0
 
                 if plan_already_generated:
-                    # (A) Plan is already generated => Show the plan details
                     for message in message_history:
                         with st.chat_message(message['role']):
                             plan = json.loads(message['content'])
@@ -371,11 +386,11 @@ if st.session_state['refined_hypotheses']:
 
                     # Show the Accept button if a plan is generated
                     accept_button = st.button("Accept the plan", key=f"accept_plan_{i}")
+                    
                     if accept_button:
                         # On accept, store the last plan as final_hypothesis
                         st.session_state.approved_hypotheses.append({"hypothesis_title": hypothesis, "analysis_plan": message_history[-1]})
                         st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis'] = message_history[-1]
-
                         st.rerun()
 
                 else:
@@ -456,11 +471,14 @@ if st.session_state.hypotheses_refined:
     updated_hypotheses = st.session_state.refined_hypotheses
 
     for i, hypothesis_obj in enumerate(updated_hypotheses["hypotheses"]):
+       
         with st.expander(f"{hypothesis_obj['title']}"):
 
+            # If a hypothesis is approved, display it
             if st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis']:
                 refined_hypothesis = st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis']
-                st.markdown(refined_hypothesis['content'])
+                st.markdown(refined_hypothesis['content']) #Correct the display here
+                # st.rerun()
 
             elif st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] == []:
                 for step_j, step_obj in enumerate(hypothesis_obj["steps"]):
@@ -469,7 +487,7 @@ if st.session_state.hypotheses_refined:
                 st.markdown("---")
 
                 # Display history of the previous conversations about this particular hypothesis.
-                for msg in st.session_state['refined_hypotheses']['hypotheses'][i]['history']:
+                for msg in st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis_history']:
                     # print(f"\n\nMESSAGE: {msg}")
                     with st.chat_message(msg["role"]):
                         st.markdown(msg["content"])
@@ -482,8 +500,11 @@ if st.session_state.hypotheses_refined:
                 
                 if button:
                     # Saves the last message from the history.
-                    last_message = st.session_state['refined_hypotheses']['hypotheses'][i]['history'][-1]
-                    print(f"\n\n[INFO] The last message in the refined hypotheses history:\n{last_message}\n")
+                    last_message = st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis_history'][-1]
+
+                    print(f"\n\nLAST MESSAGE: {last_message}")
+                    print(f"\n\nLAST MESSAGE TYPE: {type(last_message)}")
+                    
                     # Here the last hypotheses should be saved as accepted_hypotheses
                     st.session_state['approved_hypotheses'].append(last_message)
                     st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] = last_message
@@ -491,10 +512,13 @@ if st.session_state.hypotheses_refined:
 
 
                 if prompt:
-                    st.session_state['refined_hypotheses']['hypotheses'][i]['history'].append(
+                    # Append prompt from the user
+                    st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis_history'].append(
                         {"role":"user", "content": prompt}
                     )
-                    history = st.session_state['refined_hypotheses']['hypotheses'][i]['history']
+                    
+                    history = st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis_history']
+                    
                     response = client.responses.create(
                         model="gpt-4o",
                         instructions=refinig_instructions,
@@ -502,15 +526,20 @@ if st.session_state.hypotheses_refined:
                         tools=[{"type": "web_search_preview"}],
                         store=False
                     )
-                    # st.write(response.output_text)
-                    st.session_state['refined_hypotheses']['hypotheses'][i]['history'].append(
+                    
+                    # Append the assistant's response
+                    st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis_history'].append(
                     {"role":"assistant", "content": response.output_text}
                     )
                     st.rerun()
 
                 # pass
 
-# CSV upload on the left
+#######################
+# Beginning of the app
+# Two columns to upload files
+#######################
+
 with col1:
     st.markdown(
         """
@@ -669,9 +698,9 @@ if st.button("🚀 Process Files"):
                     {"role": "user", "content": combined_str}
                     ]
                 
-                # Add a refined hypotheses to the dict.
+                # Add a refined hypotheses to session state, and initialize new lists for each hypothesis.
                 updated_hypotheses['hypotheses'][i]['final_hypothesis'] = []
-                updated_hypotheses['hypotheses'][i]['final_hypothesis_history'] = []
+                updated_hypotheses['hypotheses'][i]['final_hypothesis_history'] = [{"role": "assistant", "content": hypothesis_obj}]
 
             st.session_state.refined_hypotheses = updated_hypotheses
             st.session_state.hypotheses_refined = True
