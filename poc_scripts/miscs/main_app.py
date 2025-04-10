@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 # Custom imports from your code base
-from assistant_event_handlers import EventHandler
+from poc_scripts.assistant_event_handlers import EventHandler
 
 # From your custom openAI beta libraries (example placeholders)
 from openai.types.beta.assistant_stream_event import (

@@ -10,7 +10,7 @@ import pprint
 
 import base64
 
-from assistant_event_handlers import EventHandler
+from poc_scripts.assistant_event_handlers import EventHandler
 
 from openai.types.beta.assistant_stream_event import (
     ThreadRunStepCreated,

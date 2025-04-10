@@ -47,3 +47,13 @@ I aim to implement the following features in APRA:
 - A system to build knowledge maps that link related research questions.
 - An experimental design assistant to streamline and optimize data collection efforts.
 - These features represent my vision for APRA's potential and will be developed iteratively as the project progresses. My goal is to empower ecological researchers with tools that make their work more efficient, impactful, and collaborative.
+
+## How does it work?
+
+- After pressing the Process data button, the code interpreter returns an initial analysis of the provided dataset in context of the hypotheses. It returns `["processed"] = True`, and the whole output is stored in the `st.session_state.messages` list (such that this first message is at the position `0`, any additional messages can be ), under the `"role": "assistant"`, with a list of `items` collected from the response. These items (messages) can be of a type `text`, `code_input`, `code_output`, or `image`. Each element has its `content`.
+- When it is done, in the sidebar another button shows up, that allows to refine the initial hypotheses. The refining process cosists of:
+    - sending a request to LLM that collects the informations from the assistnt output and critically analyses it, 
+    - search the Web to understand the context of the hypotheses,
+    - provides refined hypotheses to the user.
+    - returns a structured response: `[{"hypothesis_title": str, "original_content": str, "refined_content": str}]`.
+- 

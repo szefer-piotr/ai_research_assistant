@@ -10,14 +10,23 @@ import pprint
 
 import base64
 
-from assistant_event_handlers import EventHandler
+# from poc_scripts.assistant_event_handlers import EventHandler
+
+from openai.types.responses import (
+    ResponseTextDeltaEvent,
+    ResponseCreatedEvent,
+    ResponseCompletedEvent,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    # AnnotationURLCitation
+)
 
 from openai.types.beta.assistant_stream_event import (
     ThreadRunStepCreated,
     ThreadRunStepDelta,
     ThreadRunStepCompleted,
     ThreadMessageCreated,
-    ThreadMessageDelta
+    ThreadMessageDelta,
 )
 
 from openai.types.beta.threads.text_delta_block import TextDeltaBlock
@@ -35,6 +44,8 @@ client = OpenAI(api_key=openai_api_key)
 
 data_summary_instructions = """
 Task: Summarize the provided dataset by analyzing its columns.
+When using the code interpreter ALWAYS load FULL dataset to have a complete view of the data.
+Do not use `head()` when examining the data!
 Extract and list all column names.
 For each column:
 Infer a human-readable description of what the column likely represents.
@@ -50,6 +61,18 @@ Output Format: Return a Python dictionary where each key is the column name, and
 The dictionary should contain one entry per column in the dataset.
 """
 
+refine_hypotheses_instructions = """
+You are an expertin ecoogical studies that knows the literature in-and-out.
+Task: 
+- Refine the provided hypotheses further based on the daset description and refined hypotheses.
+- The hypotheses should be more specific and actionable.
+- Always search the web to look for scientific literature that can help refine the hypotheses.
+- In your response ALWAYS provide link to the cited papers.
+- From your web search always provide a short summary of the information you found.
+- Provide your thought process and refine the hypotheses step by step.
+- The output should be a list of refined hypotheses.
+"""
+
 data_summary_assistant = client.beta.assistants.create(
     name="Data Summarizing Assistant",
     temperature=0,
@@ -60,7 +83,23 @@ data_summary_assistant = client.beta.assistants.create(
 
 
 def main():
-    st.title("CSV & TXT File Uploader")
+
+    # Force a font accross the app
+    # st.markdown("""
+    #     <link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
+    #     <style>
+    #     * {
+    #         font-family: 'Open Sans', sans-serif !important;
+    #     }
+    #     </style>
+    #     """, unsafe_allow_html=True)
+
+        # Header with soulless (monospace) font
+    st.markdown("""
+        <h1 style='text-align: center; font-family: monospace; letter-spacing: 2px;'>
+        RESEARCH ASSISTANT
+        </h1>
+        """, unsafe_allow_html=True)
 
     # Initialize session state for files
     if "csv_file" not in st.session_state:
@@ -76,10 +115,114 @@ def main():
     # This boolean flag controls whether we hide the file overview
     if "processing" not in st.session_state:
         st.session_state["processing"] = False
+    if "planning" not in st.session_state:
+        st.session_state["planning"] = False
+    if "web_search_calls" not in st.session_state:
+        st.session_state["web_search_calls"] = []
 
     # Only show the chat messages if we are already processing
     if st.session_state["processing"]:
-        st.subheader("Streamed Messages")
+        st.markdown(
+            """
+            <style>
+            div.stButton > button:first-child {
+                background-color: green !important;
+                color: white;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+
+        button = st.sidebar.button("Refine hypotheses with LLM.")
+
+        # pprint.pprint(st.session_state.messages)
+
+        data = st.session_state.messages[0]
+        text_contents = [item["content"] for item in data["items"] if item["type"] == "text"]
+        joined_text = "\n".join(text_contents)
+
+        if button:
+            collected_citations = []
+            with st.chat_message("assistant"):
+                
+                response = client.responses.create(
+                    # model="gpt-4o",
+                    model="gpt-4o-mini",
+                    input=joined_text,
+                    instructions=refine_hypotheses_instructions,
+                    tools=[{"type": "web_search_preview"}],
+                    tool_choice='required',
+                    stream=True,
+                    temperature=0,          
+                )
+
+                assistant_output = []
+
+                print("NEW RESPONSE:")
+
+                for event in response:                    
+                    print(f"{event}")
+                    
+                    if isinstance(event, ResponseCreatedEvent):
+                        assistant_output.append({"type": "text", "content": ""})
+                        assistant_text_box = st.empty()
+                    
+                    elif isinstance(event, ResponseTextDeltaEvent):
+                        if event.type == 'response.output_text.delta':
+                            assistant_text_box.empty()
+                            assistant_output[-1]["content"] += event.delta
+                            assistant_text_box.markdown(assistant_output[-1]["content"])
+
+                    elif isinstance(event, ResponseCompletedEvent):
+                        completed_response = event.response
+                        for item in completed_response.output:
+                            if isinstance(item, ResponseOutputMessage):
+                                for content_block in item.content:
+                                    if isinstance(content_block, ResponseOutputText):
+                                        for ann in content_block.annotations:
+                                            collected_citations.append((ann.title, ann.url))
+
+                            # # Get the web search result
+                            # web_search_result = client.web_searches.retrieve(web_search_call.id)
+                            # print(web_search_result)
+
+                            # # Create a new item for the assistant output
+                            # assistant_output.append({
+                            #     "type": "text",
+                            #     "content": f"Web search result: {web_search_result.result}"
+                            # })
+
+                st.session_state.messages.append({"role": "assistant", "items": assistant_output})
+                st.session_state["web_search_calls"].append(collected_citations)
+                
+                # Change the app state
+                st.session_state["planning"] = True
+                st.session_state["processing"] = False
+        
+            st.rerun()
+    
+    elif st.session_state["planning"]:   
+        
+        with st.sidebar.expander("Web Search Sources", expanded=True):
+            if "web_search_calls" in st.session_state and st.session_state["web_search_calls"]:
+                for i, citation in enumerate(st.session_state["web_search_calls"][0], start=1):
+                    st.write(f"{i}. Title {citation[0]}")
+                    st.write(f"Link: {citation[1]}")
+                    # st.write(f"{i}. Title: {ws_call[0]}")
+                    # st.write(ws_call[1])
+                    # st.write(ws_call.url)
+                    # Dump the entire call object, or just relevant parts
+                    # st.json({
+                    #     "id": ws_call.id,
+                    #     "status": ws_call.status,
+                    #     "type": ws_call.type,
+                    #     # Add any extra fields if available
+                    # })
+            else:
+                st.write("No web search calls made yet.")
+        
+        print(f"\n[MESSAGES]: {st.session_state.messages}\n")
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 for item in message["items"]:
@@ -95,6 +238,7 @@ def main():
                     elif item_type == "code_output":
                         with st.status("Results", state="complete"):
                             st.code(item["content"])
+
         # Stop here so we don't show file overviews once "processing" is True.
         return
 
@@ -139,7 +283,19 @@ def main():
 
     # --- Once both CSV & TXT are present, show the "Process" button ---
     if csv_file is not None and txt_file is not None:
+        st.markdown(
+            """
+            <style>
+            div.stButton > button:first-child {
+                background-color: green !important;
+                color: white;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
         button = st.sidebar.button("Process Hypotheses")
+        
         if button:
             # Set "processing" so we hide file overviews on next rerun
             st.session_state["processing"] = True
@@ -158,7 +314,7 @@ def main():
                 messages=[
                     {
                         "role": "user",
-                        "content": f"Refine the hypotheses: {st.session_state.hypotheses} using the attached dataset.",
+                        "content": f"Refine the hypotheses: {st.session_state.hypotheses} using the attached dataset. List the refined hypotheses at the end.",
                         "attachments": [
                             {
                                 "file_id": st.session_state.file_ids[0],
@@ -172,6 +328,7 @@ def main():
             st.session_state.thread_id = thread.id
 
             with st.chat_message("assistant"):
+                
                 stream = client.beta.threads.runs.create(
                     thread_id=st.session_state.thread_id,
                     assistant_id=data_summary_assistant.id,
