@@ -308,11 +308,11 @@ def display_title_small():
 #     return response.output_text
 
 
-def refine_hypothesis_with_llm(client, message, previous_response_id):
+def llm_response(client, message, previous_response_id=None):
     """
     This function returns 
     """
-    if previous_response_id:
+    if previous_response_id is not None:
         response = client.responses.create(
             model="gpt-4o",
             previous_response_id=previous_response_id,
@@ -388,33 +388,36 @@ def display_hypotheses_in_sidebar(hypotheses_data, client, history):
     st.sidebar.subheader(selected_hypothesis_title)
     st.sidebar.write(selected_hypothesis_text)
 
+    # Extract the last message id from th thread
+    the_thing = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
+    assistant_messages = filter_assistant_messages(the_thing)
+    
+    message_ids_on_thread_list = [message["id"] for message in assistant_messages]
+
+    print(f"\n *************************************** \n")
+    print(message_ids_on_thread_list)
+
     if st.sidebar.button("Accept the refined hypothesis", key=f"accept_btn_{selected_hypothesis}"):
-        refined_output = refine_hypothesis_with_llm(
+        refined_output = llm_response(
             client,
             message=history
         )
         # Store the refined output so the user can see it in the UI
-        st.session_state["accepted_hypotheses"][i] = refined_output
+        st.session_state["accepted_hypotheses"][selected_hypothesis_title] = refined_output
         # Force immediate re-run so the button disappears
         st.rerun()
 
     prompt = st.chat_input("Discuss the refined hypotheses further or accept it.", key=f'chat_input_{selected_hypothesis}')
 
-    the_thing = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
-
-    assistant_messages = filter_assistant_messages(the_thing)
-
-    import pprint
-    pprint.pprint(assistant_messages)
-    # pprint.pprint(f"\n\nTYPE OF THE THING: {type(the_thing[-1])}")
-    # pprint.pprint(f"\n\nLIST OF MESSAGES: {the_thing[-1].id}")    
+    # previous_response_id = st.session_state
 
     if prompt:
-        refine_hypothesis_with_llm(
+        assistant_response = llm_response(
             client,
-            message=prompt,
-            previous_response_id=client.messages.id
+            message=prompt
         )
+
+
 
 
     # for i, hypothesis in enumerate(hypotheses_data.get("hypotheses", [])):

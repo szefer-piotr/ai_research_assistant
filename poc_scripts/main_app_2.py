@@ -177,13 +177,19 @@ if st.session_state.app_state == "processing":
                 st.session_state.thread_id,
                 [{"type": "web_search_preview"}]
             )
-            # Store the message history
+            # Store the message history manually
             st.session_state.messages.append({"role": "assistant", "items": assistant_output})
-            # Filter only text
             data_description = [text['content'] for text in assistant_output if text["type"] == "text"]
-            # print(f"\n\nData description: {data_description}\n\n")
             st.session_state.data_processing_output = data_description
-            # st.session_state.data_processing_output=[output['content'] for output in assistant_output[0] if assistant_output[0]["type"] == "text"]
+
+            # Add a message to a thread
+            client.beta.threads.messages.create(
+                st.session_state.thread_id,
+                role="assistant",
+                content=data_description,
+                metadata={"content_type": "data_description"}
+            )
+
             st.session_state["is_processing_done"]=True
             st.rerun()
 
@@ -214,16 +220,16 @@ elif st.session_state.app_state == "refining_hypotheses":
 
     extracted_hypotheses = json.loads(response.output_text)
 
-    # st.session_state.refined_hypotheses = extracted_hypotheses['hypotheses'] # List of hypothes
+    ext_hyp = client.beta.threads.messages.create(
+        thread_id=st.session_state.thread_id,
+        role="assistant",
+        content=response.output_text
+    )
 
-    # T each one add another keys: history (with response id), and accepted hypothesis, analysis_plan, execution, summary, report
-
-    #----------------------------------------------------------------------------
-
-    # print(f"EXTRACTED HYPOTHESES: {extracted_hypotheses}.")
+    print(ext_hyp.id)
 
     # Add this to the history
-    history = {"role": "assistant", "content": extracted_hypotheses}
+    # history = {"role": "assistant", "content": extracted_hypotheses}
 
     with st.sidebar:
         display_title_small()
@@ -237,8 +243,6 @@ elif st.session_state.app_state == "refining_hypotheses":
     if len(st.session_state["accepted_hypotheses"]) == len(extracted_hypotheses['hypotheses']):
         st.session_state.app_state = "analysis_plan_generation"
         st.rerun()
-
-
 
 
 elif st.session_state.app_state == "analysis_plan_generation":
