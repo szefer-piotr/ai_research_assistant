@@ -308,26 +308,6 @@ def display_title_small():
 #     return response.output_text
 
 
-def llm_response(client, message, previous_response_id=None):
-    """
-    This function returns 
-    """
-    if previous_response_id is not None:
-        response = client.responses.create(
-            model="gpt-4o",
-            previous_response_id=previous_response_id,
-            input=[{"role": "system", "content": message}],
-        )
-    
-    else:
-        response = client.responses.create(
-            model="gpt-4o",
-            input=[{"role": "system", "content": message}],
-        )
-
-    return {"response": response.output_text, "response_id": response.id}
-
-
 def filter_assistant_messages(page) -> list:
     """
     Given a SyncCursorPage[Message] object, return a list of dicts containing the IDs and full message objects
@@ -350,7 +330,30 @@ def filter_assistant_messages(page) -> list:
     return filtered
 
 
-def display_hypotheses_in_sidebar(hypotheses_data, client, history):
+
+def llm_response(client, message, prevous_response_id=None):
+    if prevous_response_id:
+        # If a previous response ID is provided, use it to continue the conversation
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[{"role": "system", "content": refine_hypotheses_instructions},
+                   {"role": "user", "content": message}],
+            tools=[{"type": "web_search_preview"}],
+            previous_response_id=prevous_response_id
+        )
+    else:
+        response = client.responses.create(
+            model="gpt-4o",
+            input=[{"role": "system", "content": refine_hypotheses_instructions},
+                {"role": "user", "content": message}],
+            tools=[{"type": "web_search_preview"}],
+        )
+
+    return {"response": response.output_text, "response_id": response.id}
+
+
+
+def display_hypotheses_in_sidebar(hypotheses_data, client):
     """
     Displays each hypothesis in the sidebar with:
       - Title, text
@@ -378,34 +381,52 @@ def display_hypotheses_in_sidebar(hypotheses_data, client, history):
         unsafe_allow_html=True
     )
 
+    #Extract the hypotheses from the dictionary with only one key 'hypotheses'.
     hypotheses = hypotheses_data.get("hypotheses", [])
+    
+    # Initialize the conversation history for each hypothesis
+    conversation_history = {}
 
     selected_hypothesis = st.sidebar.selectbox("", options=[hypothesis['title'] for hypothesis in hypotheses])
 
     selected_hypothesis_title = [hypo["title"] for hypo in hypotheses if hypo["title"] == selected_hypothesis][0]
     selected_hypothesis_text = [hypo["text"] for hypo in hypotheses if hypo["title"] == selected_hypothesis][0]
-
+    
+    # Initiate the conversation history for the selected hypothesis
+    for hypothesis in hypotheses:
+        # Initialize the conversation history for each hypothesis with data description and
+        conversation_history[hypothesis['title']] = [
+            {
+                "role": "assistant",
+                "items": [{"type": "text", "content": "Would you like to refine this hypothesis? I can search the web for  you to set it in the current research context."}]
+            }
+        ]
+    
     st.sidebar.subheader(selected_hypothesis_title)
     st.sidebar.write(selected_hypothesis_text)
 
     # Extract the last message id from th thread
-    the_thing = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
-    assistant_messages = filter_assistant_messages(the_thing)
+    # the_thing = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
+    # assistant_messages = filter_assistant_messages(the_thing)
+    # message_ids_on_thread_list = [message["id"] for message in assistant_messages]
+    # print(f"\n *************************************** \n")
+    # print(message_ids_on_thread_list)
     
-    message_ids_on_thread_list = [message["id"] for message in assistant_messages]
-
-    print(f"\n *************************************** \n")
-    print(message_ids_on_thread_list)
-
     if st.sidebar.button("Accept the refined hypothesis", key=f"accept_btn_{selected_hypothesis}"):
+
         refined_output = llm_response(
             client,
-            message=history
+            system_message=f"### The data description:\n{st.session_state.data_processing_output[0]}.\n\n### Hypothesis\n{hypothesis['text']}",
+            user_message=refine_hypotheses_instructions
         )
+        
         # Store the refined output so the user can see it in the UI
-        st.session_state["accepted_hypotheses"][selected_hypothesis_title] = refined_output
+        conversation_history[selected_hypothesis_title].append(refined_output)
+        
         # Force immediate re-run so the button disappears
         st.rerun()
+
+    display_messages(conversation_history[selected_hypothesis_title])
 
     prompt = st.chat_input("Discuss the refined hypotheses further or accept it.", key=f'chat_input_{selected_hypothesis}')
 
@@ -414,7 +435,17 @@ def display_hypotheses_in_sidebar(hypotheses_data, client, history):
     if prompt:
         assistant_response = llm_response(
             client,
-            message=prompt
+            system_message=f"### The data description:\n{st.session_state.data_processing_output[0]}.\n\n### Hypothesis\n{hypothesis['text']}",
+            user_message=prompt
+
+        )
+
+        conversation_history[selected_hypothesis_title].append(
+            {
+                "role": "assistant",
+                "items": [{"type": "text", "content": assistant_response["response"]},
+                          {"type": "respones_id", "content": assistant_response["response_id"]}]
+            }
         )
 
 

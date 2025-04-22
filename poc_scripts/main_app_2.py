@@ -40,6 +40,9 @@ if "code_execution" not in st.session_state:
 if "accepted_hypotheses" not in st.session_state:
         st.session_state["accepted_hypotheses"] = {}
 
+if "message_ids" not in st.session_state:
+    st.session_state["message_ids"] = []
+
 # Track current state of the app
 if "app_state" not in st.session_state:
     st.session_state.app_state = "uploading_files"
@@ -75,7 +78,9 @@ if st.session_state.app_state == "uploading_files":
             st.write(f"**Shape:** {df.shape}")
             st.write(f"**Columns:** {list(df.columns)}")
             st.dataframe(df.head())
+            
             st.session_state.csv_file[csv_file.name] = csv_file
+        
         except Exception as e:
             st.error(f"Error reading CSV file: {e}")
 
@@ -86,6 +91,7 @@ if st.session_state.app_state == "uploading_files":
             st.write(f"**Filename:** {txt_file.name}")
             st.write("**Content (first 200 chars):**")
             st.write(text_content[:200] + ("..." if len(text_content) > 200 else ""))
+            
             st.session_state.hypotheses = text_content
 
             # print(st.session_state.hypotheses)
@@ -106,7 +112,7 @@ if st.session_state.app_state == "uploading_files":
             unsafe_allow_html=True
         )
         
-        button = st.sidebar.button("Process Hypotheses")
+        button = st.sidebar.button("Evaluate Hypotheses with LLM")
 
         if button:
             st.session_state.app_state = "processing"
@@ -141,30 +147,31 @@ if st.session_state.app_state == "processing":
         display_messages(st.session_state.messages)
 
     elif not st.session_state["is_processing_done"]:
-        with st.sidebar:
-            display_title_small()
-            if st.session_state.data_processing_output:
-                button = st.button("Refine the suggested hypotheses with LLM")
-                if button:
-                    st.session_state.app_state = "refining_hypotheses"
-                    st.rerun()
+        # with st.sidebar:
+        #     display_title_small()
+        #     if st.session_state.data_processing_output:
+        #         button = st.button("Refine the suggested hypotheses with LLM")
+        #         if button:
+        #             st.session_state.app_state = "refining_hypotheses"
+        #             st.rerun()
 
+        # This allows for multiple files to be uploaded
         for file in st.session_state.csv_file:
             openai_file = client.files.create(
                 file=st.session_state.csv_file[file],
                 purpose="assistants"
-                )    
+                )
+            st.session_state.file_ids.append(openai_file.id)
         
-        st.session_state.file_ids.append(openai_file.id)
-            
+        # Creata a thread
         thread = client.beta.threads.create(
             messages=[
                 {"role": "user",
                 "content": f"""Refine the hypotheses: {st.session_state.hypotheses} using the attached dataset. 
                 List the refined hypotheses at the end.
                 """,
-                "attachments": [{"file_id": st.session_state.file_ids[0],
-                                "tools": [{"type": "code_interpreter"}]}]
+                "attachments": [{"file_id": file_id,
+                                "tools": [{"type": "code_interpreter"}]} for file_id in st.session_state.file_ids]
                 }])
         
         st.session_state.thread_id = thread.id
@@ -182,13 +189,20 @@ if st.session_state.app_state == "processing":
             data_description = [text['content'] for text in assistant_output if text["type"] == "text"]
             st.session_state.data_processing_output = data_description
 
-            # Add a message to a thread
-            client.beta.threads.messages.create(
+            # Add a message to the thread
+            message = client.beta.threads.messages.create(
                 st.session_state.thread_id,
                 role="assistant",
-                content=data_description,
+                content= " ".join(data_description),
                 metadata={"content_type": "data_description"}
             )
+
+            st.session_state["message_ids"].append(
+                {"content_type": "refined_hypotheses_str", 
+                 "message_id": message.id}
+            )
+
+            print(f"Message IDS: {st.session_state['message_ids']}")
 
             st.session_state["is_processing_done"]=True
             st.rerun()
@@ -205,7 +219,7 @@ elif st.session_state.app_state == "refining_hypotheses":
     response = client.responses.create(
         model = "gpt-4o-mini",
         input=[
-            {"role": "system", "content": "Extract only the refined hypotheses listed from the assistant output."},
+            {"role": "system", "content": "Extract only the refined hypotheses listed in the assistant output."},
             {"role": "user", "content": single_string}
         ],
         text={
@@ -223,21 +237,22 @@ elif st.session_state.app_state == "refining_hypotheses":
     ext_hyp = client.beta.threads.messages.create(
         thread_id=st.session_state.thread_id,
         role="assistant",
-        content=response.output_text
+        content=response.output_text,
+        metadata={"content_type": "refined_hypotheses_str"}
     )
 
+    # Extracted hypotheses are being saved in teh thread.
+    # They can be extracted using the ext_hyp.id.
     print(ext_hyp.id)
 
-    # Add this to the history
-    # history = {"role": "assistant", "content": extracted_hypotheses}
+    st.session_state["message_ids"].append({"content_type": "refined_hypotheses_str", "message_id": ext_hyp.id})
 
     with st.sidebar:
         display_title_small()
     
     display_hypotheses_in_sidebar(
-        extracted_hypotheses, 
-        client, 
-        history=refine_hypotheses_instructions
+        extracted_hypotheses, # This is a json file with hypotheses key having a list of hypotheses (dictionaries) with a title and text
+        client, # This is a client that holds threads and messages
         )
     
     if len(st.session_state["accepted_hypotheses"]) == len(extracted_hypotheses['hypotheses']):
