@@ -49,6 +49,8 @@ if "app_state" not in st.session_state:
 if "is_processing_done" not in st.session_state:
     st.session_state["is_processing_done"] = False
 
+if "conversation_history" not in st.session_state:
+    st.session_state["conversation_history"] = {}
 # if "refinement" not in st.session_state:
 #     st.session_state["refinement"] = False
 # if "planning" not in st.session_state:
