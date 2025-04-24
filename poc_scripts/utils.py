@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import base64
 import streamlit as st
+import json
 
 from openai.types.beta.assistant_stream_event import (
     ThreadRunStepCreated,
@@ -337,23 +338,24 @@ def llm_response(
     system_message=refine_hypotheses_instructions,
     previous_response_id=None):
     
-    if previous_response_id:
-        print(f"There is a previous response ID: {previous_response_id}")
-        # If a previous response ID is provided, use it to continue the conversation
-        response = client.responses.create(
-            model="gpt-4o",
-            input=[{"role": "system", "content": system_message},
-                   {"role": "user", "content": message}],
-            tools=[{"type": "web_search_preview"}],
-            previous_response_id=previous_response_id
-        )
-    else:
-        response = client.responses.create(
-            model="gpt-4o",
-            input=[{"role": "system", "content": system_message},
+    
+    print(f"There is a previous response ID: {previous_response_id}")
+    # If a previous response ID is provided, use it to continue the conversation
+    response = client.responses.create(
+        model="gpt-4o",
+        input=[{"role": "system", "content": system_message},
                 {"role": "user", "content": message}],
-            tools=[{"type": "web_search_preview"}],
-        )
+        tools=[{"type": "web_search_preview"}],
+        previous_response_id=previous_response_id[-1]
+    )
+    
+    # else:
+    #     response = client.responses.create(
+    #         model="gpt-4o",
+    #         input=[{"role": "system", "content": system_message},
+    #             {"role": "user", "content": message}],
+    #         tools=[{"type": "web_search_preview"}],
+    #     )
 
     return {"response": response.output_text, "response_id": response.id}
 
@@ -393,27 +395,45 @@ def display_hypotheses_in_sidebar(hypotheses_data, client):
     # Initialize the conversation history for each hypothesis
     selected_hypothesis = st.sidebar.selectbox("", options=[hypothesis['title'] for hypothesis in hypotheses])
 
+    print(f"Selected hypothesis: {selected_hypothesis}")
+
+    # Initialize the accepted hypotheses list for the selected hypothesis
     selected_hypothesis_title = [hypo["title"] for hypo in hypotheses if hypo["title"] == selected_hypothesis][0]
     selected_hypothesis_text = [hypo["text"] for hypo in hypotheses if hypo["title"] == selected_hypothesis][0]
+    
+    if selected_hypothesis not in st.session_state.accepted_hypotheses.keys():
+        st.session_state.accepted_hypotheses[selected_hypothesis_title]=[]
+    
+    if st.session_state.accepted_hypotheses[selected_hypothesis]:
+        print(f"ACCEPTED HYPOTHESIS: {st.session_state.accepted_hypotheses[selected_hypothesis][0]}")
+        selected_hypothesis_string = st.session_state.accepted_hypotheses[selected_hypothesis][0].output_text
+        selected_hypothesis_title_accepted = selected_hypothesis_string["hypotheses"][0]["title"]
+        selected_hypothesis_text_accepted = selected_hypothesis_string["hypotheses"][0]["text"]
+        
+        st.sidebar.subheader("Accepted hypothesis")
+        st.sidebar.write(selected_hypothesis_title_accepted)
+        st.sidebar.write(selected_hypothesis_text_accepted)
 
     # Initiate the conversation history for the selected hypothesis
     # print(f"Conversation history: {st.session_state.conversation_history[selected_hypothesis_title]}")
-
-    if selected_hypothesis_title not in st.session_state.conversation_history.keys():
+    if selected_hypothesis not in st.session_state.conversation_history.keys():
         st.session_state.conversation_history[selected_hypothesis_title] = [
             {
                 "role": "assistant",
                 "items": [{"type": "text", "content": "Would you like to refine this hypothesis? I can search the web for  you to set it in the current research context."}]
             }
         ]
-    
+
+    # Display the old hypotheses in the sidebar
     st.sidebar.subheader(selected_hypothesis_title)
     st.sidebar.write(selected_hypothesis_text)
-    
+
     display_messages(st.session_state.conversation_history[selected_hypothesis_title])
 
     if st.sidebar.button("Accept the refined hypothesis", key=f"accept_btn_{selected_hypothesis}"):
-
+        
+        # If there was no conversation history, simply make a call to the LLM
+        # to refine the hypothesis.
         if len(st.session_state.conversation_history[selected_hypothesis_title]) == 1:
             refined_output = llm_response(
                 client,
@@ -422,14 +442,9 @@ def display_hypotheses_in_sidebar(hypotheses_data, client):
                 ### The data description:
                 {st.session_state.data_processing_output[0]}.
                 
-                ### Hypothesis: {selected_hypothesis_title}
+                ### Refine only this hypothesis: {selected_hypothesis_title}
                 {selected_hypothesis_text}"""
             )
-        
-            # Store the refined output so the user can see it in the UI
-            st.session_state.accepted_hypotheses[selected_hypothesis_title].append(refined_output)
-            # Force immediate re-run so the button disappears
-            st.rerun()
         
         else:
             refined_output =  client.responses.create(
@@ -448,15 +463,27 @@ def display_hypotheses_in_sidebar(hypotheses_data, client):
                 }
             )
 
+        print(f"Refined output: {refined_output}")
+
+        # Store the refined output so the user can see it in the UI
+        st.session_state.accepted_hypotheses[selected_hypothesis_title].append(refined_output)
+
+        # Force immediate re-run so the button disappears
+        st.rerun()
+
     prompt = st.chat_input("Discuss the refined hypotheses further or accept it.", key=f'chat_input_{selected_hypothesis}')
 
     # previous_response_id = st.session_state
 
     # Return last response_id from the conversation history
-    previous_response_id = [
-        resp_id["content"] for resp_id in st.session_state.conversation_history[selected_hypothesis_title][-1]["items"] if resp_id["type"] == "response_id"
-        ]
     
+    last_message = st.session_state.conversation_history[selected_hypothesis_title][-1]['items']
+    print(f"LAST MESSAGE: {last_message}")
+    response_ids = [item["content"] for item in last_message if item["type"] == "respones_id"]
+    previous_response_id = response_ids if response_ids else None
+
+    # Dodac do THREAD'a
+
     print(f"PREVIOUS RESPONSE ID: {previous_response_id}")
 
     if prompt:
@@ -467,7 +494,7 @@ def display_hypotheses_in_sidebar(hypotheses_data, client):
             ### The data description:
             {st.session_state.data_processing_output[0]}.
     
-            ### Hypothesis: {selected_hypothesis_title} 
+            ### Refine only this hypothesis: {selected_hypothesis_title} 
             {selected_hypothesis_text}
 
             ### Task:
