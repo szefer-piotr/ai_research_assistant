@@ -129,6 +129,9 @@ if "hypotheses_refined" not in st.session_state:
     st.session_state.hypotheses_refined = False
 if "refined_hypotheses" not in st.session_state:
     st.session_state.refined_hypotheses = {}
+if "approved_analyses_plans" not in st.session_state:
+    st.session_state.approved_analyses_plans = []
+
 # Uncomment this
 # if "hypotheses_refined" not in st.session_state:
 #     st.session_state.hypotheses_refined = True
@@ -162,25 +165,32 @@ col1, col2 = st.columns(2)
 
 
 ############################################################## SKIP THE STEP
-if not st.session_state['refined_hypotheses']:
-    import ast
-    with open('/home/piotr/projects/ai_research_assistant/misc/refined_hypotheses_with_key.txt', 'r') as file:
-        file_content = file.read()
-        # Convert the string to a Python object (a list, in this case)
-    data_list = ast.literal_eval(file_content)
-    # print(data_list)
-    st.session_state['refined_hypotheses']['hypotheses'] = data_list
+# if not st.session_state['refined_hypotheses']:
+#     import ast
+#     with open('/home/piotr/projects/ai_research_assistant/misc/refined_hypotheses_with_key.txt', 'r') as file:
+#         file_content = file.read()
+#         # Convert the string to a Python object (a list, in this case)
+#     data_list = ast.literal_eval(file_content)
+#     # print(data_list)
+#     st.session_state['refined_hypotheses']['hypotheses'] = data_list
 ############################################################################
 
 
-if st.session_state['refined_hypotheses']:
+if st.session_state.hypotheses_refined:
     for hypo in st.session_state['refined_hypotheses']['hypotheses']:
         hypo.setdefault('final_hypothesis_history', [])
 
+    # print(f"NO of APPROVED HYPOTHESES: {st.session_state['approved_hypotheses']}")
+    # print(f"NO of REFINED HYPOTHESES: {st.session_state['refined_hypotheses']['hypotheses']}")
+
 
     # Check if approved hypotheses have the same length as refined hypotheses
-    if len(st.session_state['approved_hypotheses']) == len(st.session_state['refined_hypotheses']['hypotheses']):
-        print(f"\n[INFO] All approved hypotheses are there:\n{st.session_state['approved_hypotheses']}\n")
+    import pprint
+    # pprint.pprint(f"AH: \n\n{st.session_state.approved_analyses_plans}\n\n")
+    is_every_plan_approved = all([len(hypo["analysis_plan"]) > 0 for hypo in st.session_state.approved_analyses_plans])
+    print(f"\n\n[INFO] Is every plan approved? {is_every_plan_approved}\n\n")
+    if is_every_plan_approved:
+        
         st.title("Analysis Manager")
 
         # Create an assistant to execute the analysis
@@ -210,7 +220,7 @@ if st.session_state['refined_hypotheses']:
             
             selected_hypothesis = st.selectbox(
                 "Select hypothesis to run the analysis", 
-                options=[hypothesis["hypothesis_title"] for hypothesis in st.session_state['approved_hypotheses']]
+                options=[hypothesis["hypothesis_title"] for hypothesis in st.session_state.approved_analyses_plans]
                 )
 
             print(f"\n[INFO] THE SELECTED HYPOTHESIS: {selected_hypothesis}")
@@ -339,7 +349,7 @@ if st.session_state['refined_hypotheses']:
         st.stop()
 
     # Check that each hypothesis has non-empty final_hypothesis
-    elif all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
+    if all(len(hypo['final_hypothesis']) > 0 for hypo in st.session_state['refined_hypotheses']['hypotheses']):
         final_hypotheses_list = [
             hypo['final_hypothesis']['content']
             for hypo in st.session_state['refined_hypotheses']['hypotheses']
@@ -349,6 +359,7 @@ if st.session_state['refined_hypotheses']:
 
         # Loop over each hypothesis
         for i, hypothesis in enumerate(final_hypotheses_list):
+            
             with st.expander(f"Hypothesis {i+1}"):
 
                 # Display the refined hypothesis text
@@ -374,6 +385,7 @@ if st.session_state['refined_hypotheses']:
                     if accept_button:
                         # On accept, store the last plan as final_hypothesis
                         st.session_state.approved_hypotheses.append({"hypothesis_title": hypothesis, "analysis_plan": message_history[-1]})
+                        st.session_state.approved_analyses_plans.append({"hypothesis_title": hypothesis, "analysis_plan": message_history[-1]})
                         st.session_state.refined_hypotheses['hypotheses'][i]['final_hypothesis'] = message_history[-1]
 
                         st.rerun()
@@ -462,6 +474,7 @@ if st.session_state.hypotheses_refined:
                 refined_hypothesis = st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis']
                 st.markdown(refined_hypothesis['content'])
 
+            # Final hypothesis is empty
             elif st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] == []:
                 for step_j, step_obj in enumerate(hypothesis_obj["steps"]):
                     st.markdown(f"**Step {step_j+1}:** {step_obj['step']}")
@@ -485,7 +498,9 @@ if st.session_state.hypotheses_refined:
                     last_message = st.session_state['refined_hypotheses']['hypotheses'][i]['history'][-1]
                     print(f"\n\n[INFO] The last message in the refined hypotheses history:\n{last_message}\n")
                     # Here the last hypotheses should be saved as accepted_hypotheses
-                    st.session_state['approved_hypotheses'].append(last_message)
+                    st.session_state['approved_hypotheses'].append(
+                        {"hypothesis_title": hypothesis_obj['title'],
+                         "content": last_message})
                     st.session_state['refined_hypotheses']['hypotheses'][i]['final_hypothesis'] = last_message
                     st.rerun()
 
