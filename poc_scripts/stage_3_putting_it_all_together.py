@@ -92,7 +92,7 @@ Supporting context (optional, if external sources were used):
 
 analyses_step_generation_instructions = """
 ## Role
-- You are an **expert in ecological research and statistical analysis**, with proficiency in **R**.
+- You are an **expert in ecological research and statistical analysis**, with proficiency in **Python**.
 - You must apply the **highest quality statistical methods and approaches** in data analysis.
 - Your suggestions should be based on **best practices in ecological data analysis**.
 - Your role is to **provide guidance, suggestions, and recommendations** within your area of expertise.
@@ -104,11 +104,14 @@ analyses_step_generation_instructions = """
 step_execution_assistant_instructions = """
 ## Role
 You are an expert in ecological research and statistical analysis in Python. 
-Your task is to execute the analysis plan provided by the user.
+## Task
+- execute the analysis plan provided by the user STEP BY STEP. 
+- Write code in Python for each step to of the analysis plan from the beginning to the end.
+- execute code, write description and short summary forr all of the steps.
 """
 
 step_execution_instructions = """
-Execute the analysis plan.
+Execute in code every step of the analysis plan.
 """
 
 
@@ -352,7 +355,10 @@ if st.session_state.app_state == "processing":
                 st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan'] = []
                 st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan_chat_history'] = []
                 st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan_accepted'] = False
+                st.session_state.updated_hypotheses["hypotheses"][i]['plan_execution_chat_history'] = []
+                st.session_state.updated_hypotheses["hypotheses"][i]['plan_execution'] = []
                 
+                # Create an initial message for in the chat history
                 st.session_state.updated_hypotheses['hypotheses'][i]['chat_history'].append(
                     {
                         "role":"assistant", 
@@ -412,6 +418,9 @@ if st.session_state.app_state == "hypotheses_manager":
                     "Discuss with the assistant to refine this hypothesis further.",
                     key=f"chat_input{i}")
                 
+                # Provide all the conversation history during the chat
+                history = st.session_state.updated_hypotheses['hypotheses'][i]['chat_history']
+
                 if prompt:
                     
                     with st.spinner("Thinking..."):
@@ -419,9 +428,6 @@ if st.session_state.app_state == "hypotheses_manager":
                         st.session_state.updated_hypotheses['hypotheses'][i]['chat_history'].append(
                             {"role":"user", "content": prompt}
                         )
-                        
-                        # Provide all the conversation history during the chat
-                        history = st.session_state.updated_hypotheses['hypotheses'][i]['chat_history']
                         
                         print(f"History in HYPOTHESIS MANAGER: {history}")
                         
@@ -662,223 +668,204 @@ if st.session_state.app_state == "plan_manager":
 ####### PLAN EXECUTION - ANALYSIS MANAGER #############
 #######################################################
 
-# if st.session_state.app_state == "plan_execution":
-#     # Display the plans
+os.makedirs("images", exist_ok=True)
 
-#     print(st.session_state.app_state)
-
-#     #############################################################################################
-#     analysis_plan_list = [hypothesis["analysis_plan"] for hypothesis in st.session_state.updated_hypotheses['hypotheses']]
-    
-#     st.title("Analysis Plan Execution")
-
-#     for i, hypothesis in enumerate(analysis_plan_list):
-
-#         with st.expander(f"Hypothesis {i+1} Analysis Plan"):
-#             plan = json.loads(hypothesis)
-#             st.markdown(f"**{plan['analyses'][0]['title']}**")
-#             for step in plan["analyses"][0]["steps"]:
-#                 st.markdown(f"- {step['step']}")
-
-#             # [TODO] INclude chat with the plan
-    
-#             title = plan['analyses'][0]["title"]
-#             steps = plan['analyses'][0]["steps"]
-
-#             if st.button("Run the analysis", key=f"run_analysis_{i}"):
-#                 with st.spinner("Running the analysis..."):            
-                    
-#                     # Create a message in the thread
-#                     message = client.beta.threads.messages.create(
-#                         thread_id=st.session_state.thread_id,
-#                         role="user",
-#                         content=f"\n\nThe analysis plan:\n{plan}\n",
-#                     )
-                    
-#                     stream = client.beta.threads.runs.create(
-#                         thread_id=st.session_state.thread_id,
-#                         assistant_id=analysis_assistant.id,
-#                         instructions=step_execution_instructions,
-#                         tool_choice={"type": "code_interpreter"},
-#                         stream=True,
-#                     )
-                    
-#                     executor_output = []
-                    
-#                     for event in stream:
-#                         if isinstance(event, ThreadRunStepCreated):
-#                             if event.data.step_details.type == "tool_calls":
-#                                 executor_output.append({"type": "code_input",
-#                                                         "content": ""})
-
-#                                 code_input_expander= st.status("Writing code ⏳ ...", expanded=True)
-#                                 code_input_block = code_input_expander.empty()
-
-#                         if isinstance(event, ThreadRunStepDelta):
-#                             if event.data.delta.step_details.tool_calls[0].code_interpreter is not None:
-#                                 code_interpretor = event.data.delta.step_details.tool_calls[0].code_interpreter
-#                                 code_input_delta = code_interpretor.input
-#                                 if (code_input_delta is not None) and (code_input_delta != ""):
-#                                     executor_output[-1]["content"] += code_input_delta
-#                                     code_input_block.empty()
-#                                     code_input_block.code(executor_output[-1]["content"])
-
-#                         elif isinstance(event, ThreadRunStepCompleted):
-#                             if isinstance(event.data.step_details, ToolCallsStepDetails):
-#                                 code_interpretor = event.data.step_details.tool_calls[0].code_interpreter
-#                                 if code_interpretor.outputs:
-#                                     code_interpretor_outputs = code_interpretor.outputs[0]
-#                                     code_input_expander.update(label="Code", state="complete", expanded=False)
-#                                     # Image
-#                                     if isinstance(code_interpretor_outputs, CodeInterpreterOutputImage):
-#                                         image_html_list = []
-#                                         for output in code_interpretor.outputs:
-#                                             image_file_id = output.image.file_id
-#                                             image_data = client.files.content(image_file_id)
-                                            
-#                                             # Save file
-#                                             image_data_bytes = image_data.read()
-#                                             with open(f"images/{image_file_id}.png", "wb") as file:
-#                                                 file.write(image_data_bytes)
-
-#                                             # Open file and encode as data
-#                                             file_ = open(f"images/{image_file_id}.png", "rb")
-#                                             contents = file_.read()
-#                                             data_url = base64.b64encode(contents).decode("utf-8")
-#                                             file_.close()
-
-#                                             # Display image
-#                                             image_html = f'<p align="center"><img src="data:image/png;base64,{data_url}" width=600></p>'
-#                                             st.html(image_html)
-
-#                                             image_html_list.append(image_html)
-
-#                                         executor_output.append({"type": "image",
-#                                                                 "content": image_html_list})
-#                                     # Console log
-#                                     elif isinstance(code_interpretor_outputs, CodeInterpreterOutputLogs):
-#                                         executor_output.append({"type": "code_output",
-#                                                                 "content": ""})
-#                                         code_output = code_interpretor.outputs[0].logs
-#                                         with st.status("Results", state="complete"):
-#                                             st.code(code_output)    
-#                                             executor_output[-1]["content"] = code_output   
-
-#                         elif isinstance(event, ThreadMessageCreated):
-#                             executor_output.append({"type": "text",
-#                                                     "content": ""})
-#                             assistant_text_box = st.empty()
-
-#                         elif isinstance(event, ThreadMessageDelta):
-#                             if isinstance(event.data.delta.content[0], TextDeltaBlock):
-#                                 assistant_text_box.empty()
-#                                 executor_output[-1]["content"] += event.data.delta.content[0].text.value
-#                                 assistant_text_box.markdown(executor_output[-1]["content"])
-
-#                 st.rerun()
-
+# ──────────────────────────────────────────────────────────────────────────────
 if st.session_state.app_state == "plan_execution":
 
     st.title("Analysis Plan Execution")
 
     plan_jsons = [
-        h["analysis_plan"]
-        for h in st.session_state.updated_hypotheses["hypotheses"]
+        h["analysis_plan"] for h in st.session_state.updated_hypotheses["hypotheses"]
     ]
 
-    # ------------------------------------------------------------------------
-    #  ONE EXPANDER PER HYPOTHESIS (never nest another expander inside)
-    # ------------------------------------------------------------------------
     for i, raw_plan in enumerate(plan_jsons):
-        plan   = json.loads(raw_plan)
-        title  = plan["analyses"][0]["title"]
-        steps  = plan["analyses"][0]["steps"]
+        plan  = json.loads(raw_plan)
+        title = plan["analyses"][0]["title"]
+        steps = plan["analyses"][0]["steps"]
 
-        with st.expander(f"Hypothesis {i+1}: {title}"):
+        # ONE expander per hypothesis
+        with st.expander(f"Hypothesis {i + 1}: {title}", expanded=False):
 
+            # ①  show plan outline
             st.subheader("Steps")
             for s in steps:
                 st.markdown(f"- {s['step']}")
 
-            if st.button("Run the analysis", key=f"run_analysis_{i}"):
+            # ②  previous chat
+            for msg in st.session_state.updated_hypotheses["hypotheses"][i][
+                "plan_execution_chat_history"
+            ]:
+                with st.chat_message(msg["role"]):
+                    for item in msg["items"]:
+                        if item["type"] == "code_input":
+                            st.code(item["content"])
+                        elif item["type"] == "code_output":
+                            st.code(item["content"])
+                        elif item["type"] == "image":
+                            for img in item["content"]:
+                                st.markdown(img, unsafe_allow_html=True)
+                        elif item["type"] == "text":
+                            st.markdown(item["content"])
+                        else:
+                            raise ValueError(f"Unknown type: {item['type']}")
 
-                # Place-holders we update while streaming
-                code_in_box   = st.container()
-                code_out_box  = st.container()
-                image_box     = st.container()
-                assistant_box = st.container()
+            prompt       = st.chat_input(
+                "Let’s discuss the plan or execute it …",
+                key=f"chat_input_plan_{i}",
+            )
 
-                # Running buffers (strings) we keep appending to
-                code_in_buffer   = ""
-                assistant_buffer = ""
+            if st.session_state.updated_hypotheses["hypotheses"][i]["plan_execution_chat_history"] == []:
+                run_analysis = st.button("Run the analysis", key=f"run_analysis_{i}")
+            else:
+                run_analysis = st.button(
+                    "Run the analysis again", key=f"run_analysis_{i}"
+                )
 
-                with st.spinner("Running the analysis…"):
+            # kick things off
+            if run_analysis or prompt:
 
-                    # 1️⃣  seed the thread with the plan
-                    client.beta.threads.messages.create(
-                        thread_id=st.session_state.thread_id,
-                        role="user",
-                        content=f"\n\nThe analysis plan:\n{plan}\n",
-                    )
+                instructions = prompt if prompt else step_execution_instructions
 
-                    # 2️⃣  launch streaming run
-                    stream = client.beta.threads.runs.create(
-                        thread_id   = st.session_state.thread_id,
-                        assistant_id= analysis_assistant.id,
-                        instructions= step_execution_instructions,
-                        tool_choice = {"type": "code_interpreter"},
-                        stream=True,
-                    )
+                # save user message to the assistant’s thread
+                client.beta.threads.messages.create(
+                    thread_id=st.session_state.thread_id,
+                    role="user",
+                    content=f"\n\nThe analysis plan:\n{plan}\n",
+                )
 
-                    for event in stream:
+                # placeholders that live-update inside THIS expander
+                container              = st.container()
+                code_hdr_pl            = container.empty()
+                code_pl                = container.empty()
+                result_hdr_pl          = container.empty()
+                result_pl              = container.empty()
+                text_pl                = container.empty()
 
-                        # ---- tool-call step starts ---------------------------------
-                        if isinstance(event, ThreadRunStepCreated):
-                            if event.data.step_details.type == "tool_calls":
-                                code_in_buffer = ""
-                                code_in_box.info("Writing code ⏳ …")
+                assistant_output = []  # ← our running transcript
 
-                        # ---- incremental code input -------------------------------
-                        elif isinstance(event, ThreadRunStepDelta):
-                            tc = event.data.delta.step_details.tool_calls
-                            if tc and tc[0].code_interpreter and tc[0].code_interpreter.input:
-                                code_in_buffer += tc[0].code_interpreter.input
-                                code_in_box.code(code_in_buffer, language="python")
+                # helper to make sure we have a “code_input” slot
+                def ensure_code_slot():
+                    if (
+                        not assistant_output
+                        or assistant_output[-1]["type"] != "code_input"
+                    ):
+                        assistant_output.append({"type": "code_input", "content": ""})
 
-                        # ---- step finished – outputs available --------------------
-                        elif isinstance(event, ThreadRunStepCompleted):
-                            if isinstance(event.data.step_details, ToolCallsStepDetails):
-                                ci = event.data.step_details.tool_calls[0].code_interpreter
-                                if not ci.outputs:
-                                    continue
-                                first = ci.outputs[0]
+                # helper to make sure we have a “text” slot
+                def ensure_text_slot():
+                    if (
+                        not assistant_output
+                        or assistant_output[-1]["type"] != "text"
+                    ):
+                        assistant_output.append({"type": "text", "content": ""})
 
-                                # IMAGES ------------------------------------------------
-                                if isinstance(first, CodeInterpreterOutputImage):
-                                    html_parts = []
-                                    for out in ci.outputs:
-                                        fid   = out.image.file_id
-                                        bytes = client.files.content(fid).read()
-                                        b64   = base64.b64encode(bytes).decode()
-                                        html_parts.append(
-                                            f'<p align="center"><img src="data:image/png;base64,{b64}" width="600"></p>'
-                                        )
-                                    image_box.markdown("\n".join(html_parts),
-                                                       unsafe_allow_html=True)
+                # run the assistant and stream events
+                stream = client.beta.threads.runs.create(
+                    thread_id    = st.session_state.thread_id,
+                    assistant_id = analysis_assistant.id,
+                    instructions = instructions,
+                    tool_choice  = {"type": "code_interpreter"},
+                    stream       = True,
+                )
 
-                                # CONSOLE LOGS ------------------------------------------
-                                elif isinstance(first, CodeInterpreterOutputLogs):
-                                    code_out_box.code(first.logs)
+                # ───────── STREAM HANDLER ─────────
+                for event in stream:
 
-                        # ---- assistant messages -----------------------------------
-                        elif isinstance(event, ThreadMessageCreated):
-                            assistant_buffer = ""           # reset for a new message
+                    # 1️⃣  Tool-calls step starts  → header “Writing code…”
+                    if isinstance(event, ThreadRunStepCreated):
+                        sd = event.data.step_details
+                        if getattr(sd, "tool_calls", None):
+                            ensure_code_slot()
+                            code_hdr_pl.markdown("**Writing code ⏳ …**")
 
-                        elif isinstance(event, ThreadMessageDelta):
-                            if (event.data.delta.content and
-                                isinstance(event.data.delta.content[0], TextDeltaBlock)):
-                                assistant_buffer += event.data.delta.content[0].text.value
-                                assistant_box.markdown(assistant_buffer)
+                    # 2️⃣  incremental code deltas
+                    elif isinstance(event, ThreadRunStepDelta):
+                        sd = event.data.delta.step_details
+                        tc = getattr(sd, "tool_calls", None)
+                        if tc and tc[0].code_interpreter:
+                            delta = tc[0].code_interpreter.input or ""
+                            if delta:
+                                ensure_code_slot()
+                                assistant_output[-1]["content"] += delta
+                                code_pl.code(assistant_output[-1]["content"])
 
-                st.success("Analysis finished ✔️")
+                    # 3️⃣  tool-calls step completed  → show results
+                    elif isinstance(event, ThreadRunStepCompleted):
+                        sd = event.data.step_details
+                        tc = getattr(sd, "tool_calls", None)
+                        if not tc:
+                            continue
+                        ci = tc[0].code_interpreter
+                        outputs = ci.outputs or []
+                        if not outputs:
+                            continue
+
+                        result_hdr_pl.markdown("#### Results")
+                        
+                        for out in outputs:
+                            
+                            if isinstance(out, CodeInterpreterOutputLogs):
+                                logs = out.logs
+                                assistant_output.append(
+                                    {"type": "code_output", "content": logs}
+                                )
+                                result_pl.code(logs)
+
+                            # (b) image(s)
+                            elif isinstance(out, CodeInterpreterOutputImage):
+                                fid  = out.image.file_id
+                                data = client.files.content(fid).read()
+
+                                # save
+                                path = f"images/{fid}.png"
+                                with open(path, "wb") as fp:
+                                    fp.write(data)
+
+                                # embed
+                                b64  = base64.b64encode(data).decode("utf-8")
+                                html = (
+                                    f'<p align="center"><img src="data:image/png;base64,{b64}" '
+                                    f'width="600"></p>'
+                                )
+                                result_pl.markdown(html, unsafe_allow_html=True)
+                                img_html = html
+
+                                if not assistant_output or assistant_output[-1]["type"] != "image":
+                                    assistant_output.append({"type": "image", "content": []})
+
+                                assistant_output[-1]["content"].append(img_html)
+
+                    # 4️⃣  assistant plain-text message starts
+                    elif isinstance(event, ThreadMessageCreated):
+                        ensure_text_slot()
+
+                    # 5️⃣  assistant plain-text deltas
+                    elif isinstance(event, ThreadMessageDelta):
+                        blk = event.data.delta.content[0]
+                        if isinstance(blk, TextDeltaBlock):
+                            ensure_text_slot()
+                            assistant_output[-1]["content"] += blk.text.value
+                            text_pl.markdown(assistant_output[-1]["content"])
+                # ───── END STREAM HANDLER ────────
+
+                # persist chat in session_state
+                st.session_state.updated_hypotheses["hypotheses"][i][
+                    "plan_execution_chat_history"
+                ].append({"role": "assistant", "items": assistant_output})
+
+                # client.beta.threads.messages.create(
+                #     thread_id=st.session_state.thread_id,
+                #     role="user",
+                #     content=json.dumps(assistant_output, ensure_ascii=False),
+                # )
+
                 st.rerun()
+
+
+
+################################################################
+############ STAGE V: SUMMARY AND REPORT #######################
+################################################################
+
+# if st.session_state.app_state == "summary":
