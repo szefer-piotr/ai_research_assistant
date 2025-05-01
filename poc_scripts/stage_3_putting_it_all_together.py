@@ -165,16 +165,9 @@ if "approved_hypotheses" not in st.session_state:
 if 'analysis_outputs' not in st.session_state:
     st.session_state['analysis_outputs'] = {}
 
-# UI
-# Force a font accross the app
-st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Open+Sans&display=swap" rel="stylesheet">
-<style>
-* {
-    font-family: 'Open Sans', sans-serif !important;
-}
-</style>
-""", unsafe_allow_html=True)
+
+
+
 
 # Header with soulless (monospace) font
 st.markdown("""
