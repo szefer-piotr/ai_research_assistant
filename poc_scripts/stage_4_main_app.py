@@ -126,6 +126,79 @@ Execute in code every step of the analysis plan.
 """
 
 
+STAGE_INFO = {
+    "upload": {
+        "title": "1 · Upload Files",
+        "description": (
+            "Upload a CSV dataset and a TXT file containing your initial hypotheses. "
+            "Once both are uploaded, the app automatically advances."
+        ),
+        "how_it_works": (
+            "Files are held in st.session_state; the CSV preview is displayed with "
+            "st.dataframe() so you can verify the data."
+        ),
+    },
+    "processing": {
+        "title": "2 · Processing Files",
+        "description": (
+            "The app summarizes your dataset and rewrites each raw hypothesis into "
+            "a clear, testable statement. You’ll review them next."
+        ),
+        "how_it_works": (
+            "A GPT‑4o Data Summarizer assistant analyzes the CSV, then another "
+            "GPT‑4o call refines the hypotheses using that summary; results are "
+            "cached for later stages."
+        ),
+    },
+    "hypotheses_manager": {
+        "title": "3 · Hypotheses Manager",
+        "description": (
+            "Chat with the assistant to fine‑tune each hypothesis, then click "
+            "Accept ✔️ to lock it in. All must be accepted before continuing."
+        ),
+        "how_it_works": (
+            "Each hypothesis maintains its own chat history. Acceptance adds a "
+            "final_hypothesis field, gating progression."
+        ),
+    },
+    "plan_manager": {
+        "title": "4 · Analysis Plan Manager",
+        "description": (
+            "For every accepted hypothesis, the assistant drafts a numbered "
+            "analysis plan. Request revisions until it’s perfect, then approve."
+        ),
+        "how_it_works": (
+            "GPT‑4o generates JSON‑structured plans; the app validates the JSON "
+            "before allowing approval."
+        ),
+    },
+    "plan_execution": {
+        "title": "5 · Plan Execution",
+        "description": (
+            "The assistant runs each approved plan in Python, streaming code, "
+            "logs, and visuals live. You can pause, discuss, or rerun analyses."
+        ),
+        "how_it_works": (
+            "A code‑interpreter assistant streams run events. The app captures "
+            "code inputs, outputs, and generated images, storing them for replay."
+        ),
+    },
+    "report_generation": {
+        "title": "6 · Scientific Report",
+        "description": (
+            "The assistant interprets results, searches recent ecological "
+            "literature, and produces a full scientific report you can download."
+        ),
+        "how_it_works": (
+            "The Report Generation assistant consolidates analysis outputs, "
+            "performs web_search_preview calls for citations, writes an IMRaD "
+            "report, and offers it as a Markdown download."
+        ),
+    },
+}
+
+
+
 data_summary_assistant = client.beta.assistants.create(
     name="Data Summarizing Assistant",
     temperature=0,
@@ -315,6 +388,7 @@ def format_initial_assistant_msg(title: str, steps: list[dict]) -> str:
 # ────────────────────────────────────────────────────────────────────────────────
 
 if st.session_state.app_state in {"upload", "processing"}:
+    
     with st.sidebar:
         st.header("📂 Upload files")
 
@@ -348,19 +422,23 @@ if st.session_state.app_state in {"upload", "processing"}:
 
 
 
-
-
-
-
-
 # ────────────────────────────────────────────────────────────────────────────────
 # MAIN AREA – STAGE 1  (PROCESSING)
 # ────────────────────────────────────────────────────────────────────────────────
 
 st.title("🔬 Hypotheses Workflow")
 
+
 if st.session_state.app_state == "processing":
-    st.subheader("Step 1 – Process files")
+    st.subheader("Step 2 – Process files")
+
+    st.subheader(STAGE_INFO["upload"]["title"])
+    st.write(STAGE_INFO["upload"]["description"])
+    st.write(STAGE_INFO["upload"]["how_it_works"])
+
+    st.subheader(STAGE_INFO["processing"]["title"])
+    st.write(STAGE_INFO["processing"]["description"])
+    st.write(STAGE_INFO["processing"]["how_it_works"])
 
     # PROCESS FILES BUTTON
     if st.button("🚀 Process Files", disabled=st.session_state.processing_done):
@@ -506,6 +584,10 @@ elif st.session_state.app_state == "hypotheses_manager":
     # ── MAIN CANVAS: chat & accept button -------------------------------------
     sel_idx = st.session_state.selected_hypothesis
     sel_hyp = st.session_state.updated_hypotheses["hypotheses"][sel_idx]
+
+    # st.subheader(STAGE_INFO["hypotheses_manager"]["title"])
+    # st.write(STAGE_INFO["hypotheses_manager"]["description"])
+    # st.write(STAGE_INFO["hypotheses_manager"]["how_it_works"])
 
     st.subheader(f"🗣️ Discussion – {sel_hyp['title']}")
 
@@ -958,4 +1040,178 @@ def plan_execution(client: OpenAI):
 
 if st.session_state.app_state == "plan_execution":
     plan_execution(client)
-    
+
+
+
+
+
+# ────────────────────────────────────────────────────────────────────────────────
+# STAGE‑4  ▸  REPORT GENERATION
+# ────────────────────────────────────────────────────────────────────────────────
+# """This module adds the final stage to the Streamlit workflow.  
+# It **interprets analysis results**, consults current literature via the
+# `web_search_preview` tool, and produces a publish‑ready scientific report
+# containing a concise methodology section and a discussion of the findings in
+# the context of contemporary ecological research.
+
+# #### How it works
+# 1.  **Collects** each accepted hypothesis and its execution transcript.
+# 2.  **Extracts** the assistant‑generated narrative (only the *text* items) from
+#     the execution history as the raw *results* for that hypothesis.
+# 3.  **Calls** a dedicated *Report Generation Assistant* that:
+#     • interprets the statistical results;  
+#     • queries the web for the latest peer‑reviewed work;  
+#     • writes an integrated report in Markdown.
+# 4.  Displays the report inline **and** offers a one‑click Markdown download.
+
+# Add this module _after_ the existing `plan_execution` router and before the
+# main app router.
+# """
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 🔧  Assistant definition & system instructions
+# ────────────────────────────────────────────────────────────────────────────────
+
+report_generation_instructions = """
+You are an expert ecological scientist and statistician.
+Your task is to craft a peer‑reviewed‑quality report based on:
+• The refined hypotheses tested;  
+• The statistical results produced in the previous stage;  
+• Any additional context you can gather from current literature.
+
+**Report structure (Markdown):**
+1. **Title & Abstract** – concise overview of aims and main findings.
+2. **Introduction** – brief ecological background and rationale.
+3. **Methodology** – one paragraph describing data sources, key variables, and
+   statistical procedures actually executed (e.g., GLM, mixed‑effects model,
+   correlation analysis, etc.).  *Use past tense.*
+4. **Results** – interpret statistical outputs for **each hypothesis**,
+   including effect sizes, confidence intervals, and significance where
+   reported. Embed any relevant numeric values (means, p‑values, etc.).
+5. **Discussion** – compare findings with recent studies retrieved via
+   `web_search_preview`; highlight agreements, discrepancies, and plausible
+   ecological mechanisms.
+6. **Conclusion** – wrap‑up of insights and recommendations for future work.
+
+*Write in formal academic style, using citations like* “(Smith 2024)”.
+
+If web search yields no directly relevant article, proceed without citation.
+"""
+
+# # Create the assistant **once** and cache the ID in session_state
+# if "report_assistant_id" not in st.session_state:
+#     report_asst = client.beta.assistants.create(
+#         name="Report Generation Assistant",
+#         model="gpt-4o",
+#         temperature=0,
+#         instructions=report_generation_instructions,
+#         tools=[{"type": "web_search_preview"}],
+#     )
+#     st.session_state.report_assistant_id = report_asst.id
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 🖼️  Helper – build the consolidated prompt sent to the assistant
+# ────────────────────────────────────────────────────────────────────────────────
+
+def build_report_prompt() -> str:
+    """Gather hypotheses, results, and data summary into a single prompt."""
+    prompt_parts: list[str] = [
+        f"# Data summary\n{st.session_state.data_summary}\n",
+        "# Hypotheses and Results",
+    ]
+
+    for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"], 1):
+        # Collect only *text* chunks from the execution phase
+        result_text_blocks: list[str] = []
+        for msg in hyp.get("plan_execution_chat_history", []):
+            if msg.get("role") == "assistant":
+                for itm in msg.get("items", []):
+                    if itm["type"] == "text":
+                        result_text_blocks.append(itm["content"])
+        results_combined = "\n".join(result_text_blocks).strip() or "(no textual results captured)"
+
+        prompt_parts.append(
+            f"## Hypothesis {idx}\n"
+            f"**Statement:** {hyp['final_hypothesis']}\n\n"
+            f"**Results transcript:**\n{results_combined}\n"
+        )
+
+    return "\n".join(prompt_parts)
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 📑  Stage function: report_generation
+# ────────────────────────────────────────────────────────────────────────────────
+
+def report_generation(client: OpenAI):
+    """Render the Report Generation stage and orchestrate the assistant call."""
+
+    if st.session_state.app_state != "report_generation":
+        return
+
+    st.title("📄 Scientific Report Builder")
+
+    # Sidebar – quick outline of accepted hypotheses
+    with st.sidebar:
+        st.header("Refined hypotheses")
+        for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"], 1):
+            st.markdown(f"**H{idx}.** {hyp['title']}")
+
+    # Button to trigger report generation
+    if "report_generated" not in st.session_state:
+        st.session_state.report_generated = False
+        st.session_state.report_markdown = ""
+
+    if st.button("📝 Generate full report", disabled=st.session_state.report_generated):
+        full_prompt = build_report_prompt()
+
+        with st.spinner("Synthesising report – this may take a minute …"):
+            resp = client.responses.create(
+                model="gpt-4o",
+                instructions=report_generation_instructions,
+                input=[{"role": "user", "content": full_prompt}],
+                tools=[{"type": "web_search_preview"}],
+                stream=False,
+                text={"format": {"type": "markdown"}},
+                store=False,
+            )
+
+        st.session_state.report_markdown = resp.output_text
+        st.session_state.report_generated = True
+
+    # Display the generated report
+    if st.session_state.report_generated:
+        st.markdown(st.session_state.report_markdown, unsafe_allow_html=True)
+
+        # Offer download as Markdown
+        st.download_button(
+            "⬇️ Download report (Markdown)",
+            st.session_state.report_markdown,
+            file_name="scientific_report.md",
+            mime="text/markdown",
+        )
+
+        # Optionally, add a next‑steps button to reset or exit
+        if st.button("🔄 Start new session"):
+            st.session_state.clear()
+            st.experimental_rerun()
+
+# ────────────────────────────────────────────────────────────────────────────────
+# 🔌  Integrate into the main router after `plan_execution`
+# ────────────────────────────────────────────────────────────────────────────────
+
+# Example insertion (add to the bottom of your main script):
+#
+if st.session_state.app_state == "report_generation":
+    report_generation(client)
+
+# Transition logic – once *all* hypotheses have at least one assistant
+# message inside `plan_execution_chat_history`, enable report stage.
+if (
+    st.session_state.app_state == "plan_execution"
+    and all(
+        h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["hypotheses"]
+    )
+):
+    if st.sidebar.button("➡️ Generate final report"):
+        st.session_state.app_state = "report_generation"
+        st.experimental_rerun()
