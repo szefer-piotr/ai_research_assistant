@@ -144,6 +144,37 @@ analysis_assistant = client.beta.assistants.create(
     )
 
 
+###############################################################
+
+
+import ast          # safer than eval for “Python-looking” literals
+import streamlit as st
+
+# ── 1. Read the file (you could also use st.file_uploader) ────────────
+# with open("/home/szefer/ai_assistant/ai_research_assistant/poc_scripts/hypotheses.txt", encoding="utf-8") as fp:
+#     raw_text = fp.read()
+
+# # ── 2. Convert the string → list[dict] ────────────────────────────────
+# #     hypotheses.txt uses single quotes, so json.loads() would choke;
+# #     ast.literal_eval understands Python-style literals.
+# try:
+#     hypotheses_list = ast.literal_eval(raw_text)   # ← [{'title': ...}, …]
+# except (ValueError, SyntaxError) as err:
+#     st.error(f"Couldn’t parse hypotheses.txt: {err}")
+#     st.stop()
+
+# ── 3. Store in session_state ─────────────────────────────────────────
+# #     Ensure the surrounding dict exists, then assign.
+# st.session_state.setdefault("updated_hypotheses", {})
+# st.session_state.updated_hypotheses["hypotheses"] = hypotheses_list
+
+# st.success("Hypotheses loaded into session_state ✅")
+
+# st.session_state.app_state = "plan_execution"
+
+###############################################################
+
+
 if "data_uploaded" not in st.session_state:
     st.session_state.data_uploaded = False
 if "hypotheses_uploaded" not in st.session_state:
@@ -175,6 +206,8 @@ if "approved_hypotheses" not in st.session_state:
     st.session_state.approved_hypotheses = []
 if 'analysis_outputs' not in st.session_state:
     st.session_state['analysis_outputs'] = {}
+if 'current_exec_idx' not in st.session_state:
+    st.session_state['current_exec_idx'] = 0
 
 
 ###########################################################
@@ -231,7 +264,8 @@ def init_state():
         updated_hypotheses={},
         thread_id="",
         selected_hypothesis=0,
-        analysis_plan_chat_history=[]            # index of hypothesis being edited
+        analysis_plan_chat_history=[],
+        plan_execution_chat_history=[]            # index of hypothesis being edited
     )
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
@@ -634,9 +668,294 @@ def plan_manager(client: OpenAI):
     )
 
     if all_ready:
+
+        print(st.session_state.updated_hypotheses["hypotheses"])
+
         if st.button("➡️ Move to plan execution stage"):
             st.session_state.app_state = "plan_execution"
             st.rerun()
 
 if st.session_state.app_state == "plan_manager":
     plan_manager(client)
+
+
+
+
+
+
+
+###############################################################################
+
+
+###############################################################################
+
+
+
+from typing import List, Dict, Any, Optional
+
+import base64
+import json
+import os
+import re
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+import streamlit as st
+from openai import OpenAI
+from openai.types.beta.assistant_stream_event import (
+    ThreadRunStepCreated,
+    ThreadRunStepDelta,
+    ThreadRunStepCompleted,
+    ThreadMessageCreated,
+    ThreadMessageDelta,
+)
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
+from openai.types.beta.threads.runs.code_interpreter_tool_call import (
+    CodeInterpreterOutputImage,
+    CodeInterpreterOutputLogs,
+)
+
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+# … imports & other stage code remain unchanged …
+
+IMG_DIR = Path("images"); IMG_DIR.mkdir(exist_ok=True)
+JSON_RE  = re.compile(r"\{[\s\S]*?\}")
+STEP_RE  = re.compile(r"^(?:\d+\.\s+|[-*+]\s+)(.+)")
+
+def extract_json_fragment(text: str) -> Optional[str]:
+    m = JSON_RE.search(text)
+    return m.group(0) if m else None
+
+def _mk_fallback_plan(text: str) -> Dict[str, Any]:
+    """Convert a loose Markdown plan → canonical dict."""
+    lines   = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    title   = lines[0].lstrip("# ") if lines else "Analysis Plan"
+    steps   = []
+    for ln in lines[1:]:
+        m = STEP_RE.match(ln)
+        if m:
+            steps.append({"step": m.group(1).strip()})
+    if not steps:  # fall back to one‑chunk step
+        steps = [{"step": text.strip()}]
+    return {"analyses": [{"title": title, "steps": steps}]}
+
+def safe_load_plan(raw: Any) -> Optional[Dict[str, Any]]:
+    """Return plan dict from dict / JSON / python literal / markdown."""
+    if isinstance(raw, dict):
+        return raw
+    if not raw:  # empty / None
+        return None
+
+    if isinstance(raw, str):
+        txt = raw.strip()
+        if txt.startswith("```"):
+            txt = txt.lstrip("` pythonjson").rstrip("`").strip()
+
+        # 1️⃣ json.loads with double quotes
+        try:
+            return json.loads(txt)
+        except json.JSONDecodeError:
+            # 2️⃣ ast.literal_eval for single‑quoted dicts
+            try:
+                obj = ast.literal_eval(txt)
+                if isinstance(obj, dict):
+                    return obj
+            except Exception:
+                pass
+            # 3️⃣ fragment inside markdown
+            frag = extract_json_fragment(txt)
+            if frag:
+                try:
+                    return json.loads(frag)
+                except json.JSONDecodeError:
+                    pass
+            # 4️⃣ fallback – build from markdown bullets
+            return _mk_fallback_plan(txt)
+    return None
+
+def ensure_execution_keys(h):
+    h.setdefault("plan_execution_chat_history", [])
+    return h
+# -----------------------------------------------------------------------------
+# PLAN EXECUTION STAGE
+# -----------------------------------------------------------------------------
+
+def plan_execution(client: OpenAI):
+    if st.session_state.app_state != "plan_execution":
+        return
+
+    st.title("Analysis Plan Execution")
+
+    # ------------------------------------------------------------------
+    # Sidebar – hypotheses
+    # ------------------------------------------------------------------
+    with st.sidebar:
+        st.header("Accepted hypotheses")
+        for idx, h in enumerate(st.session_state.updated_hypotheses["hypotheses"]):
+            title = f"Hypothesis {idx+1}"
+            with st.expander(title, expanded=False):
+                st.markdown(h["final_hypothesis"], unsafe_allow_html=True)
+                if st.button("▶️ Run / review", key=f"select_exec_{idx}"):
+                    st.session_state["current_exec_idx"] = idx
+                    st.rerun()
+
+    # Which hypothesis are we executing?
+    current = st.session_state.get("current_exec_idx", 0)
+    hypo_obj = ensure_execution_keys(
+        st.session_state.updated_hypotheses["hypotheses"][current])
+
+    # ------------------------------------------------------------------
+    # Parse analysis plan robustly
+    # ------------------------------------------------------------------
+    plan_dict = safe_load_plan(hypo_obj["analysis_plan"])
+    if not plan_dict:
+        st.error("❌ Could not parse analysis plan JSON. Please regenerate the plan in the previous stage or ask the assistant to output valid JSON.")
+        return
+
+    plan_title = plan_dict["analyses"][0]["title"]
+    plan_steps = plan_dict["analyses"][0]["steps"]
+
+    # Normalise stored plan to dict for future safety
+    if isinstance(hypo_obj["analysis_plan"], str):
+        hypo_obj["analysis_plan"] = plan_dict
+
+    # ------------------------------------------------------------------
+    # Main canvas – plan outline + chat / execution UI
+    # ------------------------------------------------------------------
+    st.subheader(f"Hypothesis {current+1}: {plan_title}")
+    st.markdown("### Plan steps")
+    for num, s in enumerate(plan_steps, start=1):
+        st.markdown(f"{num}. {s['step']}")
+
+    # Previous transcript ------------------------------------------------
+    for msg in hypo_obj["plan_execution_chat_history"]:
+        with st.chat_message(msg["role"]):
+            if msg["role"] == "assistant":
+                for item in msg["items"]:
+                    if item["type"] == "code_input":
+                        st.code(item["content"], language="python")
+                    elif item["type"] == "code_output":
+                        st.code(item["content"], language="text")
+                    elif item["type"] == "image":
+                        for html in item["content"]:
+                            st.markdown(html, unsafe_allow_html=True)
+                    elif item["type"] == "text":
+                        st.markdown(item["content"], unsafe_allow_html=True)
+            else:
+                st.markdown(msg["content"], unsafe_allow_html=True)
+
+    # Prompt & run button ------------------------------------------------
+    user_prompt = st.chat_input(
+        "Discuss the plan or ask to run specific steps …",
+        key="exec_chat_input",
+    )
+
+    run_label = (
+        "▶️ Run analysis" if not hypo_obj["plan_execution_chat_history"] else "🔄 Run analysis again"
+    )
+    run_analysis = st.button(run_label, key="run_analysis_btn")
+
+    if run_analysis or user_prompt:
+        # Choose assistant instructions
+        instructions = user_prompt if user_prompt else step_execution_instructions
+
+        if user_prompt:
+            hypo_obj["plan_execution_chat_history"].append(
+                {"role": "user", "content": user_prompt}
+            )
+
+        client.beta.threads.messages.create(
+            thread_id=st.session_state.thread_id,
+            role="user",
+            content=f"\n\nThe analysis plan to execute:\n{json.dumps(plan_dict, indent=2)}",
+        )
+
+        # Live placeholders
+        container      = st.container()
+        code_hdr_pl    = container.empty()
+        code_pl        = container.empty()
+        result_hdr_pl  = container.empty()
+        result_pl      = container.empty()
+        text_pl        = container.empty()
+
+        assistant_items: List[Dict[str, Any]] = []
+
+        def ensure_slot(tp: str):
+            if not assistant_items or assistant_items[-1]["type"] != tp:
+                assistant_items.append({"type": tp, "content": "" if tp != "image" else []})
+
+        stream = client.beta.threads.runs.create(
+            thread_id    = st.session_state.thread_id,
+            assistant_id = analysis_assistant.id,
+            instructions = instructions,
+            tool_choice  = {"type": "code_interpreter"},
+            stream       = True,
+        )
+
+        for event in stream:
+            if isinstance(event, ThreadRunStepCreated):
+                if getattr(event.data.step_details, "tool_calls", None):
+                    ensure_slot("code_input")
+                    code_hdr_pl.markdown("**Writing code ⏳ …**")
+
+            elif isinstance(event, ThreadRunStepDelta):
+                tc = getattr(event.data.delta.step_details, "tool_calls", None)
+                if tc and tc[0].code_interpreter:
+                    delta = tc[0].code_interpreter.input or ""
+                    if delta:
+                        ensure_slot("code_input")
+                        assistant_items[-1]["content"] += delta
+                        code_pl.code(assistant_items[-1]["content"], language="python")
+
+            elif isinstance(event, ThreadRunStepCompleted):
+                tc = getattr(event.data.step_details, "tool_calls", None)
+                if not tc:
+                    continue
+                outputs = tc[0].code_interpreter.outputs or []
+                if not outputs:
+                    continue
+                result_hdr_pl.markdown("#### Results")
+                for out in outputs:
+                    if isinstance(out, CodeInterpreterOutputLogs):
+                        ensure_slot("code_output")
+                        assistant_items[-1]["content"] += out.logs
+                        result_pl.code(out.logs)
+                    elif isinstance(out, CodeInterpreterOutputImage):
+                        fid  = out.image.file_id
+                        data = client.files.content(fid).read()
+                        img_path = IMG_DIR / f"{fid}.png"
+                        img_path.write_bytes(data)
+                        b64 = base64.b64encode(data).decode()
+                        html = (
+                            f'<p align="center"><img src="data:image/png;base64,{b64}" '
+                            f'width="600"></p>'
+                        )
+                        ensure_slot("image")
+                        assistant_items[-1]["content"].append(html)
+                        result_pl.markdown(html, unsafe_allow_html=True)
+
+            elif isinstance(event, ThreadMessageCreated):
+                ensure_slot("text")
+
+            elif isinstance(event, ThreadMessageDelta):
+                blk = event.data.delta.content[0]
+                if isinstance(blk, TextDeltaBlock):
+                    ensure_slot("text")
+                    assistant_items[-1]["content"] += blk.text.value
+                    text_pl.markdown(assistant_items[-1]["content"], unsafe_allow_html=True)
+
+        hypo_obj["plan_execution_chat_history"].append(
+            {"role": "assistant", "items": assistant_items}
+        )
+
+        st.rerun()
+
+# -----------------------------------------------------------------------------
+# ROUTER – call the appropriate stage function each run
+# -----------------------------------------------------------------------------
+
+if st.session_state.app_state == "plan_execution":
+    plan_execution(client)
+    
