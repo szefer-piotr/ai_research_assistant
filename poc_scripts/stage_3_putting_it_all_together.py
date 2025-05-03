@@ -229,148 +229,151 @@ if st.session_state.app_state == "upload":
 
 # Three columns to center the button in the middle one
 if st.session_state.app_state == "processing":
-    
-    if st.button("🚀 Process Files"):        
-        # Create a thread
-        thread = client.beta.threads.create()
-        st.session_state.thread_id = thread.id
 
-        # Create an openai file
-        for file in st.session_state.files:
-            openai_file = client.files.create(
-                file=st.session_state.files[file],
-                purpose="assistants"
-            )
-            st.session_state.file_ids.append(openai_file.id)
-        
-        # Update the thread with uploaded files
-        client.beta.threads.update(
-                thread_id=st.session_state.thread_id,
-                tool_resources={
-                    "code_interpreter": {"file_ids" :
-                        [
-                            file_id for file_id in st.session_state.file_ids
-                        ]
-                    }
-                }
-            )
-        
-        with st.spinner("Refining your hypotheses..."):
-            
-            # Step I summarize the data and save the summary
-            run = client.beta.threads.runs.create_and_poll(
-                thread_id=st.session_state.thread_id,
-                assistant_id=data_summary_assistant.id,
-                instructions=data_summary_instructions,
-                temperature=0
-            )
-            if run.status == 'completed':
-                messages = client.beta.threads.messages.list(
-                    thread_id=st.session_state.thread_id
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        if st.button("🚀 Process Files"):        
+            # Create a thread
+            thread = client.beta.threads.create()
+            st.session_state.thread_id = thread.id
+
+            # Create an openai file
+            for file in st.session_state.files:
+                openai_file = client.files.create(
+                    file=st.session_state.files[file],
+                    purpose="assistants"
                 )
-
-                messages_list = list(messages)
+                st.session_state.file_ids.append(openai_file.id)
+            
+            # Update the thread with uploaded files
+            client.beta.threads.update(
+                    thread_id=st.session_state.thread_id,
+                    tool_resources={
+                        "code_interpreter": {"file_ids" :
+                            [
+                                file_id for file_id in st.session_state.file_ids
+                            ]
+                        }
+                    }
+                )
+            
+            with st.spinner("Refining your hypotheses..."):
                 
-                assistant_response = []
-                
-                for msg in messages_list:
-                    for block in msg.content:
-                        if block.type == 'text':
-                            assistant_response.append(block.text.value)
+                # Step I summarize the data and save the summary
+                run = client.beta.threads.runs.create_and_poll(
+                    thread_id=st.session_state.thread_id,
+                    assistant_id=data_summary_assistant.id,
+                    instructions=data_summary_instructions,
+                    temperature=0
+                )
+                if run.status == 'completed':
+                    messages = client.beta.threads.messages.list(
+                        thread_id=st.session_state.thread_id
+                    )
 
-                st.session_state.data_summary = " ".join(assistant_response)
-                with st.expander("Data summary"):
-                    st.write(st.session_state.data_summary)
+                    messages_list = list(messages)
+                    
+                    assistant_response = []
+                    
+                    for msg in messages_list:
+                        for block in msg.content:
+                            if block.type == 'text':
+                                assistant_response.append(block.text.value)
 
-            prompt = f"""
-            Data summary preview: {st.session_state.data_summary}.\n\nHypotheses: {st.session_state.hypotheses}.\n\n {processing_files_instruction}
-            Extract individual hypotheses from the text provided by the user and refine them one by one.            
-            """
+                    st.session_state.data_summary = " ".join(assistant_response)
+                    with st.expander("Data summary"):
+                        st.write(st.session_state.data_summary)
 
-            # Step II refine hypotheses
-            response = client.responses.create(
-                model="gpt-4o",
-                input=[{"role": "user",
-                        "content": prompt}],
-                tools=[{"type": "web_search_preview"}],
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "hypotheses",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "hypotheses": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "title": { "type": "string" },
-                                            "steps": {
-                                                "type": "array",
-                                                "items": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "step": { "type": "string" }
-                                                    },
-                                                    "required": ["step"],
-                                                    "additionalProperties": False
+                prompt = f"""
+                Data summary preview: {st.session_state.data_summary}.\n\nHypotheses: {st.session_state.hypotheses}.\n\n {processing_files_instruction}
+                Extract individual hypotheses from the text provided by the user and refine them one by one.            
+                """
+
+                # Step II refine hypotheses
+                response = client.responses.create(
+                    model="gpt-4o",
+                    input=[{"role": "user",
+                            "content": prompt}],
+                    tools=[{"type": "web_search_preview"}],
+                    text={
+                        "format": {
+                            "type": "json_schema",
+                            "name": "hypotheses",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hypotheses": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "title": { "type": "string" },
+                                                "steps": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "step": { "type": "string" }
+                                                        },
+                                                        "required": ["step"],
+                                                        "additionalProperties": False
+                                                    }
                                                 }
-                                            }
-                                        },
-                                        "required": ["title", "steps"],
-                                        "additionalProperties": False
+                                            },
+                                            "required": ["title", "steps"],
+                                            "additionalProperties": False
+                                        }
                                     }
-                                }
+                                },
+                                "required": ["hypotheses"],
+                                "additionalProperties": False
                             },
-                            "required": ["hypotheses"],
-                            "additionalProperties": False
-                        },
-                        "strict": True
-                    }
-                }
-            )
-            
-            updated_hypotheses = json.loads(response.output_text)
-            # Make a list of titles as keys
-            hypotheses_title_keys_list = [hypothesis['title'] for hypothesis in updated_hypotheses['hypotheses']]            
-            # Save the updated hypotheses to the session state
-            st.session_state.updated_hypotheses = updated_hypotheses
-
-            #############################################
-            ## DEFINE FIELDS FOR THE HYPOTHESES OBJECT ##
-            #############################################
-
-            # Add empty fileds for chat and for the final hypothesis
-            for i, hypothesis in enumerate(updated_hypotheses['hypotheses']):
-                st.session_state.updated_hypotheses["hypotheses"][i]['chat_history'] = []
-                st.session_state.updated_hypotheses["hypotheses"][i]['final_hypothesis'] = ""
-                st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan'] = []
-                st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan_chat_history'] = []
-                st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan_accepted'] = False
-                st.session_state.updated_hypotheses["hypotheses"][i]['plan_execution_chat_history'] = []
-                st.session_state.updated_hypotheses["hypotheses"][i]['plan_execution'] = []
-                
-                # Create an initial message for in the chat history
-                st.session_state.updated_hypotheses['hypotheses'][i]['chat_history'].append(
-                    {
-                        "role":"assistant", 
-                        "content": f""""
-                        Here is the refined hypothesis: {hypothesis['title']}. 
-                        Here is the rationale for its refinement: {hypothesis['steps']}
-                        """
+                            "strict": True
+                        }
                     }
                 )
+                
+                updated_hypotheses = json.loads(response.output_text)
+                # Make a list of titles as keys
+                hypotheses_title_keys_list = [hypothesis['title'] for hypothesis in updated_hypotheses['hypotheses']]            
+                # Save the updated hypotheses to the session state
+                st.session_state.updated_hypotheses = updated_hypotheses
 
-                st.write(st.session_state.updated_hypotheses["hypotheses"][i])
+                #############################################
+                ## DEFINE FIELDS FOR THE HYPOTHESES OBJECT ##
+                #############################################
 
-            # Success
-            st.success("Done")
-            
-    if st.button("Move to the next step"):
-        st.session_state.app_state = "hypotheses_manager"
-        
-        st.rerun()
+                # Add empty fileds for chat and for the final hypothesis
+                for i, hypothesis in enumerate(updated_hypotheses['hypotheses']):
+                    st.session_state.updated_hypotheses["hypotheses"][i]['chat_history'] = []
+                    st.session_state.updated_hypotheses["hypotheses"][i]['final_hypothesis'] = ""
+                    st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan'] = []
+                    st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan_chat_history'] = []
+                    st.session_state.updated_hypotheses["hypotheses"][i]['analysis_plan_accepted'] = False
+                    st.session_state.updated_hypotheses["hypotheses"][i]['plan_execution_chat_history'] = []
+                    st.session_state.updated_hypotheses["hypotheses"][i]['plan_execution'] = []
+                    
+                    # Create an initial message for in the chat history
+                    st.session_state.updated_hypotheses['hypotheses'][i]['chat_history'].append(
+                        {
+                            "role":"assistant", 
+                            "content": f""""
+                            Here is the refined hypothesis: {hypothesis['title']}. 
+                            Here is the rationale for its refinement: {hypothesis['steps']}
+                            """
+                        }
+                    )
+
+                    st.write(st.session_state.updated_hypotheses["hypotheses"][i])
+
+                # Success
+                st.success("Done")
+    with col2:            
+        if st.button("Move to the next step"):
+            st.session_state.app_state = "hypotheses_manager"        
+            st.rerun()
 
 
 
