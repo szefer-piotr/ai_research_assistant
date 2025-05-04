@@ -6,8 +6,9 @@ import os
 import json
 import time
 import pandas as pd
-
-
+from pydantic import BaseModel, RootModel
+from typing import Optional, List, Dict
+import ast
 
 import json
 import textwrap
@@ -53,17 +54,11 @@ data_summary_instructions = """
 Task: Summarize the provided dataset by analyzing its columns.
 Extract and list all column names.
 For each column:
-Infer a human-readable description of what the column likely represents.
-Identify the data type (e.g., categorical, numeric, text, date).
-Count the number of unique values.
-Output Format: Return a Python dictionary where each key is the column name, and each value is another dictionary with the following structure:
-{
-  "column_name": <<name of the analyzed column>>,
-  "description": <<inferred description of the column>>,
-  "type": <<inferred data type>>,
-  "unique_value_count": <<number of unique values>>
-}
-The dictionary should contain one entry per column in the dataset.
+- Provide column name.
+- Infer a human-readable description of what the column likely represents.
+- Identify the data type (e.g., categorical, numeric, text, date).
+- Count the number of unique values.
+Summarise every column and return the result using the function below.
 """
 
 processing_files_instruction = """
@@ -127,19 +122,8 @@ Execute in code every step of the analysis plan.
 
 
 STAGE_INFO = {
-    "upload": "#### Stage I · Upload Files\n\n **Upload a CSV dataset and a TXT file containing your initial hypotheses.**\n\nOnce both are uploaded, the app automatically advances.\n\nFiles are held in `st.session_state`; the CSV preview is displayed with `st.dataframe()` so you can verify the data.",
-    "processing": {
-        "title": "2 · Processing Files",
-        "description": (
-            "The app summarizes your dataset and rewrites each raw hypothesis into "
-            "a clear, testable statement. You’ll review them next."
-        ),
-        "how_it_works": (
-            "A GPT‑4o Data Summarizer assistant analyzes the CSV, then another "
-            "GPT‑4o call refines the hypotheses using that summary; results are "
-            "cached for later stages."
-        ),
-    },
+    "upload": "#### Stage I - Upload Files\n\n **Upload a CSV dataset and a TXT file containing your initial hypotheses.**\n\nOnce both are uploaded, the app automatically advances.\n\nFiles are held in `st.session_state`; the CSV preview is displayed with `st.dataframe()` so you can verify the data.",
+    "processing":"### Stage II - Processing Files\n\n Great! You have your files uploaded.\n\nNow the app summarizes your dataset and rewrites each raw hypothesis into a clear, testable statement.\n\nYou’ll review them next.\n\nA GPT‑4o Data Summarizer assistant analyzes the CSV, then another GPT‑4o call refines the hypotheses using that summary; results are cached for later stages.",
     "hypotheses_manager": {
         "title": "3 · Hypotheses Manager",
         "description": (
@@ -188,87 +172,106 @@ STAGE_INFO = {
 }
 
 
+class DataSummary(BaseModel):
+    column_name: str
+    description: str
+    type: str
+    unique_value_count: int
 
-# STAGE_INFO = {
-#     "upload": {
-#         "title": "Stage 1 · Upload Files",
-#         "description": (
-#             "*Upload a CSV dataset and a TXT file containing your initial hypotheses.*"
-#             "Once both are uploaded, the app automatically advances."
-#         ),
-#         "how_it_works": (
-#             "Files are held in st.session_state; the CSV preview is displayed with "
-#             "st.dataframe() so you can verify the data."
-#         ),
-#     },
-#     "processing": {
-#         "title": "2 · Processing Files",
-#         "description": (
-#             "The app summarizes your dataset and rewrites each raw hypothesis into "
-#             "a clear, testable statement. You’ll review them next."
-#         ),
-#         "how_it_works": (
-#             "A GPT‑4o Data Summarizer assistant analyzes the CSV, then another "
-#             "GPT‑4o call refines the hypotheses using that summary; results are "
-#             "cached for later stages."
-#         ),
-#     },
-#     "hypotheses_manager": {
-#         "title": "3 · Hypotheses Manager",
-#         "description": (
-#             "Chat with the assistant to fine‑tune each hypothesis, then click "
-#             "Accept ✔️ to lock it in. All must be accepted before continuing."
-#         ),
-#         "how_it_works": (
-#             "Each hypothesis maintains its own chat history. Acceptance adds a "
-#             "final_hypothesis field, gating progression."
-#         ),
-#     },
-#     "plan_manager": {
-#         "title": "4 · Analysis Plan Manager",
-#         "description": (
-#             "For every accepted hypothesis, the assistant drafts a numbered "
-#             "analysis plan. Request revisions until it’s perfect, then approve."
-#         ),
-#         "how_it_works": (
-#             "GPT‑4o generates JSON‑structured plans; the app validates the JSON "
-#             "before allowing approval."
-#         ),
-#     },
-#     "plan_execution": {
-#         "title": "5 · Plan Execution",
-#         "description": (
-#             "The assistant runs each approved plan in Python, streaming code, "
-#             "logs, and visuals live. You can pause, discuss, or rerun analyses."
-#         ),
-#         "how_it_works": (
-#             "A code‑interpreter assistant streams run events. The app captures "
-#             "code inputs, outputs, and generated images, storing them for replay."
-#         ),
-#     },
-#     "report_generation": {
-#         "title": "6 · Scientific Report",
-#         "description": (
-#             "The assistant interprets results, searches recent ecological "
-#             "literature, and produces a full scientific report you can download."
-#         ),
-#         "how_it_works": (
-#             "The Report Generation assistant consolidates analysis outputs, "
-#             "performs web_search_preview calls for citations, writes an IMRaD "
-#             "report, and offers it as a Markdown download."
-#         ),
+
+class DatasetSummary(RootModel[Dict[str, DataSummary]]):
+    """Mapping column‑name → DataSummary objects"""
+
+
+# # --- build the function‑parameter schema ---
+# param_schema: dict = DatasetSummary.model_json_schema()
+
+# # <‑‑‑ add an empty 'properties' key IF it isn't there
+# param_schema.setdefault("properties", {})      # 🟢 now passes validation
+
+schema_payload = {
+    "type": "json_schema",
+    "schema": DatasetSummary.model_json_schema()
+}
+
+# param_schema = {
+#     "type": "object",
+#     "description": "Dictionary keyed by dataset column name",
+#     "properties": {                   # each value must look like:
+#         "type": "object",
+#         "properties": {
+#             "column_name": {
+#                 "type": "string",
+#                 "description": "Name of the column in the dataset"
+#             },
+#             "description": {
+#                 "type": "string",
+#                 "description": "Description of the column"
+#             },
+#             "type": {
+#                 "type": "string",
+#                 "description": "Type of the column (e.g., categorical, numeric, text, date)"
+#             },
+#             "unique_value_count": {
+#                 "type": "integer",
+#                 "description": "Number of unique values in the column"
+#             },
+#         },
+#         "required": ["column_name","description","type","unique_value_count"],
+#         "additionalProperties": False,
 #     },
 # }
 
+param_schema = {
+    "type": "object",
+    "description": "Dictionary keyed by dataset column name",
+    "properties": {},                     # 👈 empty → satisfies validator
+    "additionalProperties": {             # each VALUE must look like:
+        "type": "object",
+        "properties": {
+            "column_name":        {"type": "string"},
+            "description":        {"type": "string"},
+            "type":               {"type": "string"},
+            "unique_value_count": {"type": "integer"},
+        },
+        "required": [
+            "column_name",
+            "description",
+            "type",
+            "unique_value_count"
+        ],
+        "additionalProperties": False,
+    },
+}
+
+response_format = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "dataset_summary",
+        "schema": param_schema,
+    },
+}
+
+
+data_summary_tool = {
+        "type": "function",
+        "function": {
+            "name": "summarize_dataset",
+            "description": "Summarize the dataset by analyzing its columns.",
+            "parameters": param_schema
+        },
+    }
 
 
 data_summary_assistant = client.beta.assistants.create(
-    name="Data Summarizing Assistant",
+    name="Data‑summarising Assistant",
+    model="gpt-4o",
     temperature=0,
     instructions=data_summary_instructions,
-    tools=[{"type": "code_interpreter"}],
-    model="gpt-4o"
-    )
+    tools=[
+        {"type": "code_interpreter"}
+    ],
+)
 
 
 analysis_assistant = client.beta.assistants.create(
@@ -283,8 +286,8 @@ analysis_assistant = client.beta.assistants.create(
 ###############################################################
 
 
-import ast          # safer than eval for “Python-looking” literals
-import streamlit as st
+          # safer than eval for “Python-looking” literals
+# import streamlit as st
 
 # ── 1. Read the file (you could also use st.file_uploader) ────────────
 # with open("/home/szefer/ai_assistant/ai_research_assistant/poc_scripts/hypotheses.txt", encoding="utf-8") as fp:
@@ -369,22 +372,10 @@ def render_hypothesis_md(hyp: dict) -> str:
 
     return "\n".join(md)
 
-# ————————————————————————————————————————————————————————————————
-# ASSISTANTS  (basic creation – adjust model/params as needed)
-# ————————————————————————————————————————————————————————————————
 
-data_summary_assistant = client.beta.assistants.create(
-    name="Data Summarizing Assistant",
-    instructions=data_summary_instructions,
-    tools=[{"type": "code_interpreter"}],
-    model="gpt-4o",
-    temperature=0,
-)
-
-# Additional assistants (analysis, execution) … create as needed
 
 # ────────────────────────────────────────────────────────────────────────────────
-# 🧮  SESSION STATE INIT
+# SESSION STATE INIT
 # ────────────────────────────────────────────────────────────────────────────────
 
 def init_state():
@@ -409,11 +400,25 @@ def init_state():
 init_state()
 
 
+st.markdown(
+    """
+    <style>
+        /* Enabled button  = green */
+        div.stButton > button:enabled {
+            background-color: #28a745 !important;   /* green  */
+            color: white            !important;
+        }
 
-
-
-
-
+        /* Disabled button = grey (optional, makes the state obvious) */
+        div.stButton > button:disabled {
+            background-color: #d0d0d0 !important;
+            color: #808080            !important;
+            cursor: not-allowed       !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ────────────────────────────────────────────────────────────────────────────────
 # 🖋️  HELPER: MARKDOWN RENDERER FOR HYPOTHESES
@@ -442,12 +447,8 @@ def format_initial_assistant_msg(title: str, steps: list[dict]) -> str:
     return "\n".join(lines)
 
 
-
-
-
-
 # ────────────────────────────────────────────────────────────────────────────────
-# 📂  SIDEBAR – UPLOADS (Stage 1 + Stage 0)
+# 📂  SIDEBAR – STAGE 1 UPLOADS
 # ────────────────────────────────────────────────────────────────────────────────
 
 st.title("🔬 Hypotheses Workflow")
@@ -457,7 +458,6 @@ if st.session_state.app_state in {"upload", "processing"}:
     if st.session_state.app_state == "upload":
         st.markdown(STAGE_INFO["upload"])
 
-    
     with st.sidebar:
         st.header("📂 Upload files")
 
@@ -492,59 +492,102 @@ if st.session_state.app_state in {"upload", "processing"}:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# MAIN AREA – STAGE 1  (PROCESSING)
+# MAIN AREA – STAGE 2  (PROCESSING)
 # ────────────────────────────────────────────────────────────────────────────────
 
 
 if st.session_state.app_state == "processing":
-    st.subheader("Step 2 – Process files")
+    
+    st.markdown(STAGE_INFO["processing"])
 
-    st.subheader(STAGE_INFO["processing"]["title"])
-    st.write(STAGE_INFO["processing"]["description"])
-    st.write(STAGE_INFO["processing"]["how_it_works"])
+    print(st.session_state.get("data_summary"))
 
-    col1, col2 = st.columns(2)
+    if st.session_state.get("data_summary"):
+        with st.expander("📊 Data summary", expanded=False):
+            ####
+            meta = json.loads(st.session_state.data_summary)
+            st.markdown("#### Dataset summary")
+            for col, m in meta.items():
+                st.markdown(f"##### {col}\n*Description:* {m['description']}\n\n*Type:* {m['data_type']}.\n\n*Unique values:* {m['unique_values_count']}\n")
+
+            ####
+            # st.markdown(st.session_state.data_summary)
+
+    if st.session_state.get("updated_hypotheses"):
+        print(st.session_state.updated_hypotheses)
+        st.subheader("Refined hypotheses")
+        for hyp in st.session_state.updated_hypotheses["hypotheses"]:
+            with st.expander(hyp['title'], expanded=False):
+                st.markdown(render_hypothesis_md(hyp))
+
+    ### Footer
+    footer = st.container()
+    col1, col2 = footer.columns(2)
 
     with col1:
-        processing_files_button = st.button("🚀 Process Files", 
-                                            disabled=st.session_state.processing_done,
-                                            key="process_files")
+        process_click = st.button(
+            "🚀 Process Files",
+            disabled=st.session_state.processing_done,
+            key="process_files"
+        )
         
-        if processing_files_button:
-            # 1️⃣ create thread
-            thread = client.beta.threads.create()
-            st.session_state.thread_id = thread.id
+    if process_click:
 
-            # 2️⃣ upload files to assistant
-            for _name, f in st.session_state.files.items():
-                openai_file = client.files.create(file=f, purpose="assistants")
-                st.session_state.file_ids.append(openai_file.id)
+        for _name, f in st.session_state.files.items():
+            openai_file = client.files.create(file=f, purpose="assistants")
+            st.session_state.file_ids.append(openai_file.id)
+        
+        # Create a new thread for the data summary
+        thread = client.beta.threads.create()
+        st.session_state.thread_id = thread.id
+        
+        # Update the thread with the files
+        client.beta.threads.update(
+            thread_id=st.session_state.thread_id,
+            tool_resources={
+                "code_interpreter": {"file_ids": st.session_state.file_ids}
+            },
+        )
 
-            # 3️⃣ update thread with resources
-            client.beta.threads.update(
+        with st.spinner("Summarising data …"):
+            run = client.beta.threads.runs.create_and_poll(
                 thread_id=st.session_state.thread_id,
-                tool_resources={"code_interpreter": {"file_ids": st.session_state.file_ids}},
+                assistant_id=data_summary_assistant.id,
+                response_format=response_format,
             )
 
-            # 4️⃣ run data summariser
-            with st.spinner("Summarising data …"):
-                run = client.beta.threads.runs.create_and_poll(
-                    thread_id=st.session_state.thread_id,
-                    assistant_id=data_summary_assistant.id,
-                    instructions=data_summary_instructions,
-                    temperature=0,
-                )
+            print(f"RUN STATUS: {run.status}")
+            print(f"RUN THE RUN: {run}")
+
+            # if run.status == "requires_action":
+            #     print(f"Run required action {run.required_action.submit_tool_outputs.tool_calls}")
+            #     call = run.required_action.submit_tool_outputs.tool_calls[1]
+            #     summary_json = json.loads(call.function.arguments)
+            #     print(f"Summary JSON from the tool output: {summary_json}")
+            #     # If you need the assistant to keep going, send the tool output back:
+            #     client.beta.threads.runs.submit_tool_outputs(
+            #         thread_id=thread.id,
+            #         run_id=run.id,
+            #         tool_outputs=[{
+            #             "tool_call_id": call.id,
+            #             "output": json.dumps(summary_json)           # or whatever you compute
+            #         }]
+            #     )
 
             if run.status == "completed":
-                messages = client.beta.threads.messages.list(thread_id=st.session_state.thread_id)
-                st.session_state.data_summary = " ".join(
-                    blk.text.value
-                    for msg in messages
-                    for blk in msg.content
-                    if blk.type == "text"
-                )
+                messages = client.beta.threads.messages.list(thread_id=st.session_state.thread_id, order="desc").data[0]
+                summary_json =  messages.content[0].text.value
+                st.session_state.data_summary = messages.content[0].text.value
+                print(f"\n\nSummary JSON: \n\n{summary_json}\n\n")
+                
+                # st.session_state.data_summary = " ".join(
+                #     blk.text.value
+                #     for msg in messages
+                #     for blk in msg.content
+                #     if blk.type == "text"
+                # )
                 with st.expander("📊 Data summary"):
-                    st.markdown(f"```\n{st.session_state.data_summary}\n```) ")
+                    st.json(summary_json)
 
             # 5️⃣ refine hypotheses
             refine_prompt = (
@@ -599,28 +642,30 @@ if st.session_state.app_state == "processing":
             # augment with extra fields & pretty initial assistant message
             for hyp in st.session_state.updated_hypotheses["hypotheses"]:
                 pretty_msg = format_initial_assistant_msg(hyp["title"], hyp["steps"])
+                
                 hyp.update(
                     chat_history=[{"role": "assistant", "content": pretty_msg}],
                     final_hypothesis="",
                 )
+            
+            # ── show refined hypotheses ABOVE footer ──────────────────────────
+    
 
             st.session_state.processing_done = True
             st.success("Processing complete!", icon="✅")
+            st.rerun()
 
-        # Show refined hypotheses summary (for preview)
-    if st.session_state.processing_done:
-        st.subheader("Refined hypotheses")
-        for hyp in st.session_state.updated_hypotheses.get("hypotheses", []):
-            with st.expander(hyp["title"], expanded=False):
-                st.markdown(render_hypothesis_md(hyp))
+    # Show refined hypotheses summary (for preview)
+
 
     # MOVE TO NEXT STEP BUTTON
-    with col2: 
-        if st.button(
+    with col2:
+        next_click = st.button(
             "➡️ Move to next step",
             disabled=not st.session_state.processing_done,
             key="next_step",
-        ):
+        )
+        if next_click:
             st.session_state.app_state = "hypotheses_manager"
             st.rerun()
 
@@ -634,7 +679,7 @@ if st.session_state.app_state == "processing":
 # MAIN AREA – STAGE 2  (HYPOTHESIS MANAGER)
 # ────────────────────────────────────────────────────────────────────────────────
 
-elif st.session_state.app_state == "hypotheses_manager":
+if st.session_state.app_state == "hypotheses_manager":
     # ── SIDEBAR: list of hypotheses --------------------------------------------
     with st.sidebar:
         st.header("📑 Hypotheses")
