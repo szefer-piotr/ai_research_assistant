@@ -226,46 +226,33 @@ response_format={
 }
 
 
-# param_schema = {
-#     "type": "object",
-#     "description": "Dictionary keyed by dataset column name",
-#     "properties": {},
-#     "additionalProperties": {          
-#         "type": "object",
-#         "properties": {
-#             "column_name":        {"type": "string"},
-#             "description":        {"type": "string"},
-#             "type":               {"type": "string"},
-#             "unique_value_count": {"type": "integer"},
-#         },
-#         "required": [
-#             "column_name",
-#             "description",
-#             "type",
-#             "unique_value_count"
-#         ],
-#         "additionalProperties": False,
-#     },
-# }
-
-# response_format = {
-#     "type": "json_schema",
-#     "json_schema": {
-#         "name": "dataset_summary",
-#         "schema": param_schema,
-#     },
-# }
-
-
-# data_summary_tool = {
-#         "type": "function",
-#         "function": {
-#             "name": "summarize_dataset",
-#             "description": "Summarize the dataset by analyzing its columns.",
-#             "parameters": param_schema
-#         },
-#     }
-
+hypotheses_schema = {
+            "format": {
+                "type": "json_schema",
+                "name": "hypotheses",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "assistant_response": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"},
+                                    "hypothesis_refined_with_data_text": {"type": "string"}
+                                },
+                                "required": ["title", "hypothesis_refined_with_data_text"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "refined_hypothesis_text": {"type": "string"}
+                    },
+                    "required": ["assistant_response", "refined_hypothesis_text"],
+                    "additionalProperties": False
+                },
+                "strict": True
+            }
+        }
 
 data_summary_assistant = client.beta.assistants.create(
     name="Data‑summarising Assistant",
@@ -382,28 +369,49 @@ st.markdown(
 )
 
 
+# def render_hypothesis_md(hyp: dict) -> str:
+#     """Return a markdown block for a single refined hypothesis."""
+#     md = [f"### {hyp['title']}"]
+
+#     if hyp.get("steps"):
+#         md.append("**Rationale:**")
+#         for i, s in enumerate(hyp["steps"], start=1):
+#             md.append(f"{i}. {s['step']}")
+
+#     if hyp.get("final_hypothesis"):
+#         md.append("\n> **Final refined hypothesis**:\n>")
+#         md.append(f"> {hyp['final_hypothesis']}")
+
+#     return "\n".join(md)
+
+# Updated helper
 def render_hypothesis_md(hyp: dict) -> str:
     """Return a markdown block for a single refined hypothesis."""
     md = [f"### {hyp['title']}"]
 
-    if hyp.get("steps"):
-        md.append("**Rationale:**")
-        for i, s in enumerate(hyp["steps"], start=1):
-            md.append(f"{i}. {s['step']}")
-
-    if hyp.get("final_hypothesis"):
-        md.append("\n> **Final refined hypothesis**:\n>")
-        md.append(f"> {hyp['final_hypothesis']}")
+    if hyp.get("hypothesis_refined_with_data_text"):
+        # md.append("\n> **Refined hypothesis**:\n>")
+        md.append(f"> {hyp['hypothesis_refined_with_data_text']}")
 
     return "\n".join(md)
 
 
-def format_initial_assistant_msg(title: str, steps: list[dict]) -> str:
-    """Return formatted markdown for the assistant seed message."""
-    lines = [f"**Refined hypothesis:** {title}", "", "**Rationale:**"]
-    lines += [f"{idx}. {step['step']}" for idx, step in enumerate(steps, start=1)]
-    return "\n".join(lines)
+# def format_initial_assistant_msg(title: str, steps: list[dict]) -> str:
+#     """Return formatted markdown for the assistant seed message."""
+#     lines = [f"**Refined hypothesis:** {title}", "", "**Rationale:**"]
+#     lines += [f"{idx}. {step['step']}" for idx, step in enumerate(steps, start=1)]
+#     return "\n".join(lines)
 
+# def format_initial_assistant_msg(title: str, steps: list[str]) -> str:
+#     """Return formatted markdown for the assistant seed message."""
+#     lines = [f"**Refined hypothesis:** {title}", "", "**Rationale:**"]
+#     lines += [f"{idx}. {step}" for idx, step in enumerate(steps, start=1)]
+#     return "\n".join(lines)
+
+# Updated helper
+def format_initial_assistant_msg(hyp: dict) -> str:
+    """Return formatted markdown for the assistant seed message."""
+    return f"**Refined hypothesis:** {hyp['title']}\n\n{hyp['hypothesis_refined_with_data_text']}"
 
 
 def stream_data_summary(client: OpenAI):
@@ -569,10 +577,16 @@ if st.session_state.app_state == "processing":
                 st.markdown(f"##### {col}\n*Description:* {m['description']}\n\n*Type:* {m['type']}.\n\n*Unique values:* {m['unique_value_count']}\n")
             # st.markdown(st.session_state.data_summary)
 
+    # if st.session_state.get("updated_hypotheses"):
+    #     # print(st.session_state.updated_hypotheses)
+    #     st.subheader("Refined hypotheses")
+    #     for hyp in st.session_state.updated_hypotheses["hypotheses"]:
+    #         with st.expander(hyp['title'], expanded=False):
+    #             st.markdown(render_hypothesis_md(hyp))
+
     if st.session_state.get("updated_hypotheses"):
-        print(st.session_state.updated_hypotheses)
         st.subheader("Refined hypotheses")
-        for hyp in st.session_state.updated_hypotheses["hypotheses"]:
+        for hyp in st.session_state.updated_hypotheses["assistant_response"]:
             with st.expander(hyp['title'], expanded=False):
                 st.markdown(render_hypothesis_md(hyp))
 
@@ -612,54 +626,19 @@ if st.session_state.app_state == "processing":
             model="gpt-4o",
             input=[{"role": "user", "content": refine_prompt}],
             tools=[{"type": "web_search_preview"}],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "hypotheses",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "hypotheses": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "title": {"type": "string"},
-                                        "steps": {
-                                            "type": "array",
-                                            "items": {
-                                                "type": "object",
-                                                "properties": {"step": {"type": "string"}},
-                                                "required": ["step"],
-                                                "additionalProperties": False,
-                                            },
-                                        },
-                                    },
-                                    "required": ["title", "steps"],
-                                    "additionalProperties": False,
-                                },
-                            }
-                        },
-                        "required": ["hypotheses"],
-                        "additionalProperties": False,
-                    },
-                    "strict": True,
-                }
-            },
+            text=hypotheses_schema,
         )
 
+        # The hypotheses are being updated here
         st.session_state.updated_hypotheses = json.loads(response.output_text)
 
-        # augment with extra fields & pretty initial assistant message
-        for hyp in st.session_state.updated_hypotheses["hypotheses"]:
-            pretty_msg = format_initial_assistant_msg(hyp["title"], hyp["steps"])
-            
-            hyp.update(
-                chat_history=[{"role": "assistant", "content": pretty_msg}],
-                final_hypothesis="",
-            )
-        
-        # ── show refined hypotheses ABOVE footer ──────────────────────────
+        # lets have a look at what is being saveed there
+        print(f"RESPONSE OUTPUT: {response.output_text}")
+
+        for hyp in st.session_state.updated_hypotheses["assistant_response"]:
+            pretty_msg = format_initial_assistant_msg(hyp)
+            hyp["chat_history"] = [{"role": "assistant", "content": pretty_msg}]
+            hyp["final_hypothesis"] = []
 
 
         st.session_state.processing_done = True
@@ -694,28 +673,77 @@ if st.session_state.app_state == "hypotheses_manager":
     # ── SIDEBAR: list of hypotheses --------------------------------------------
     with st.sidebar:
         st.header("📑 Hypotheses")
-        for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"]):
-            with st.expander(hyp["title"], expanded=False):
-                # show either final hypothesis or rationale steps
-                if hyp["final_hypothesis"]:
-                    st.markdown(f"> {hyp['final_hypothesis']}")
-                else:
-                    for j, step in enumerate(hyp["steps"], start=1):
-                        st.markdown(f"{j}. {step['step']}")
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+####################################################################################
+
+####################################################################################
+
+
+
+########        ####### HERE I HAVE TO CORRECT THE DISPLAY
+
+##############
+
+        for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"]):
+            with st.expander(hyp["title"], expanded=False):
+                st.markdown(f"> {hyp['hypothesis_refined_with_data_text']}")
+                
                 if st.button("✏️ Edit", key=f"select_{idx}"):
                     st.session_state.selected_hypothesis = idx
                     st.rerun()
 
+        # for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"]):
+        #     with st.expander(hyp["title"], expanded=False):
+        #         # show either final hypothesis or rationale steps
+        #         if hyp["final_hypothesis"]:
+        #             st.markdown(f"> {hyp['final_hypothesis']}")
+        #         else:
+        #             for j, step in enumerate(hyp["steps"], start=1):
+        #                 st.markdown(f"{j}. {step['step']}")
+
+        #         if st.button("✏️ Edit", key=f"select_{idx}"):
+        #             st.session_state.selected_hypothesis = idx
+        #             st.rerun()
+
     # ── MAIN CANVAS: chat & accept button -------------------------------------
     sel_idx = st.session_state.selected_hypothesis
-    sel_hyp = st.session_state.updated_hypotheses["hypotheses"][sel_idx]
+    sel_hyp = st.session_state.updated_hypotheses["assistant_response"][sel_idx]
 
     # st.subheader(STAGE_INFO["hypotheses_manager"]["title"])
     # st.write(STAGE_INFO["hypotheses_manager"]["description"])
     # st.write(STAGE_INFO["hypotheses_manager"]["how_it_works"])
 
     st.subheader(f"🗣️ Discussion – {sel_hyp['title']}")
+
+    print(sel_hyp)
 
     # display chat history
     for msg in sel_hyp["chat_history"]:
@@ -728,28 +756,43 @@ if st.session_state.app_state == "hypotheses_manager":
     if user_prompt:
         sel_hyp["chat_history"].append({"role": "user", "content": user_prompt})
 
+
+
+
+
+
+
+
+
+        #### Here strip the full chat history from the refined_hypothesis_text key
+
+
+        #   # ######  ####   #####
+        #   # #       #   #  #
+        ##### ####    ####   ###
+        #   # #       #  #   #
+        #   # ######  #   #  #####
+
+
+
+
+
+
+
+
+
+
+
+
+        print(f"\n\n{sel_hyp['chat_history']}")
+
         with st.spinner("Thinking …"):
             response = client.responses.create(
                 model="gpt-4o",
                 instructions=refinig_instructions,
                 input=sel_hyp["chat_history"],
                 tools=[{"type": "web_search_preview"}],
-                text = {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "refined_hypothesis_response",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "assistant_response": {"type": "string"},
-                                "refined_hypothesis_text": {"type": "string"}
-                            },
-                            "required": ["assistant_response", "refined_hypothesis_text"],
-                            "additionalProperties": False
-                        },
-                        "strict": True
-                    }
-                }
+                text = hypotheses_schema
             )
         
         response_json = json.loads(response.output_text)
@@ -776,7 +819,7 @@ if st.session_state.app_state == "hypotheses_manager":
         st.rerun()
 
     # ── AUTO‑ADVANCE -----------------------------------------------------------
-    if all(h["final_hypothesis"] for h in st.session_state.updated_hypotheses["hypotheses"]):
+    if all(h["final_hypothesis"] for h in st.session_state.updated_hypotheses["assistant_response"]):
         st.session_state.app_state = "plan_manager"  # next stage placeholder
         st.rerun()
 
