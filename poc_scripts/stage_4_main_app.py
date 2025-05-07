@@ -37,6 +37,29 @@ from openai.types.beta.threads.runs.code_interpreter_tool_call import (
     CodeInterpreterOutputLogs
     )
 
+from typing import List, Dict, Any, Optional
+
+import base64
+import json
+import os
+import re
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+import streamlit as st
+from openai import OpenAI
+from openai.types.beta.assistant_stream_event import (
+    ThreadRunStepCreated,
+    ThreadRunStepDelta,
+    ThreadRunStepCompleted,
+    ThreadMessageCreated,
+    ThreadMessageDelta,
+)
+from openai.types.beta.threads.text_delta_block import TextDeltaBlock
+from openai.types.beta.threads.runs.code_interpreter_tool_call import (
+    CodeInterpreterOutputImage,
+    CodeInterpreterOutputLogs,
+)
 
 load_dotenv()
 
@@ -73,26 +96,36 @@ Support with External Knowledge: If needed, search the web or draw from scientif
 """
 
 refinig_instructions = """
-You are an expert in ecological research and hypothesis development. Your task is to help refine the hypotheses provided by the user.
+
+You are an expert in ecological research and hypothesis development.
+You have access to the dataset description provided by the user.
+You can access internet resources to find up-to-date ecological research or contextual knowledge.
+You are given a hypothesis that have been generated based on the dataset.
+
+Your task is to help refine the hypotheses provided by the user based also on the user input.
+
 Instructions:
 Critically analyze the dataset shared by the user.
-Evaluate each hypothesis to determine whether it:
-Aligns with ecological theory or known patterns.
-Can be tested using the available data (based on variable types, structure, and coverage).
-If necessary, search the web for up-to-date ecological research or contextual knowledge to inform the refinement process.
+
+Evaluate a hypothesis to determine whether:
+- It aligns with ecological theory or known patterns (search the web).
+- Can be tested using the available data (based on variable types, structure, and coverage).
+- If necessary, search the web for up-to-date ecological research or contextual knowledge to inform the refinement process.
+
 For each hypothesis, suggest a refined version that:
-Clearly defines the expected relationship or effect.
-Includes specific variables or metrics from the dataset.
-Is phrased in a way that is statistically testable.
+- Clearly defines the expected relationship or effect.
+- ALWAYS includes specific variables or metrics from the dataset. THIS IS VERY IMPORTANT!.
+- Is phrased in a way that is statistically testable.
+
 Important Constraints:
-Do not respond to any questions unrelated to the provided hypotheses.
-Use domain knowledge and data-driven reasoning to ensure each refined hypothesis is grounded in ecological theory and evidence.
-Output Format (for each hypothesis):
-Original Hypothesis:
-Can it be tested? (Yes/No with explanation)
-Issues or concerns:
-Refined Hypothesis:
-Supporting context (optional, if external sources were used):
+- Do not respond to any questions unrelated to the provided hypotheses.
+- Use domain knowledge and data-driven reasoning to ensure each refined hypothesis is grounded in ecological theory and evidence.
+
+For each hypothesis consider:
+- Can it be tested? (Yes/No with explanation)
+- Issues or concerns with the hypothesis (if any).
+- Refined Hypothesis
+- Supporting context (optional, if external sources were used):
 """
 
 analyses_step_generation_instructions = """
@@ -178,55 +211,60 @@ class DataSummary(BaseModel):
     unique_value_count: int
 
 
-class DatasetSummary(RootModel[Dict[str, DataSummary]]):
-    """Mapping column‑name → DataSummary objects"""
+class DatasetSummary(BaseModel):
+    columns: Dict[str, DataSummary]
 
 
 schema_payload = {
-    "type": "json_schema",
+    "name": "summary_schema",
     "schema": DatasetSummary.model_json_schema()
 }
 
-
-param_schema = {
-    "type": "object",
-    "description": "Dictionary keyed by dataset column name",
-    "properties": {},
-    "additionalProperties": {          
-        "type": "object",
-        "properties": {
-            "column_name":        {"type": "string"},
-            "description":        {"type": "string"},
-            "type":               {"type": "string"},
-            "unique_value_count": {"type": "integer"},
-        },
-        "required": [
-            "column_name",
-            "description",
-            "type",
-            "unique_value_count"
-        ],
-        "additionalProperties": False,
-    },
-}
-
-response_format = {
+response_format={
     "type": "json_schema",
-    "json_schema": {
-        "name": "dataset_summary",
-        "schema": param_schema,
-    },
+    "json_schema": schema_payload
 }
 
 
-data_summary_tool = {
-        "type": "function",
-        "function": {
-            "name": "summarize_dataset",
-            "description": "Summarize the dataset by analyzing its columns.",
-            "parameters": param_schema
-        },
-    }
+# param_schema = {
+#     "type": "object",
+#     "description": "Dictionary keyed by dataset column name",
+#     "properties": {},
+#     "additionalProperties": {          
+#         "type": "object",
+#         "properties": {
+#             "column_name":        {"type": "string"},
+#             "description":        {"type": "string"},
+#             "type":               {"type": "string"},
+#             "unique_value_count": {"type": "integer"},
+#         },
+#         "required": [
+#             "column_name",
+#             "description",
+#             "type",
+#             "unique_value_count"
+#         ],
+#         "additionalProperties": False,
+#     },
+# }
+
+# response_format = {
+#     "type": "json_schema",
+#     "json_schema": {
+#         "name": "dataset_summary",
+#         "schema": param_schema,
+#     },
+# }
+
+
+# data_summary_tool = {
+#         "type": "function",
+#         "function": {
+#             "name": "summarize_dataset",
+#             "description": "Summarize the dataset by analyzing its columns.",
+#             "parameters": param_schema
+#         },
+#     }
 
 
 data_summary_assistant = client.beta.assistants.create(
@@ -407,7 +445,7 @@ def stream_data_summary(client: OpenAI):
         thread_id=thread_id,
         assistant_id=data_summary_assistant.id,
         response_format=response_format,
-        stream=True,
+        stream=True
     )
 
     for event in stream:
@@ -522,15 +560,13 @@ if st.session_state.app_state == "processing":
     
     st.markdown(STAGE_INFO["processing"])
 
-    print(st.session_state.get("data_summary"))
-
     if st.session_state.get("data_summary"):
         with st.expander("📊 Data summary", expanded=False):
             meta = st.session_state.data_summary
             st.markdown("#### Dataset summary")
             # Chack if the response 
-            for col, m in meta.items():
-                st.markdown(f"##### {col}\n*Description:* {m['description']}\n\n*Type:* {m['data_type']}.\n\n*Unique values:* {m['unique_values_count']}\n")
+            for col, m in meta["columns"].items():
+                st.markdown(f"##### {col}\n*Description:* {m['description']}\n\n*Type:* {m['type']}.\n\n*Unique values:* {m['unique_value_count']}\n")
             # st.markdown(st.session_state.data_summary)
 
     if st.session_state.get("updated_hypotheses"):
@@ -558,6 +594,7 @@ if st.session_state.app_state == "processing":
 
         # Stream data summary creation
         stream_data_summary(client)
+
         st.session_state.processing_done = True
         st.success("Processing complete!", icon="✅")
         with st.expander("📊 Data summary", expanded=False):
@@ -697,16 +734,44 @@ if st.session_state.app_state == "hypotheses_manager":
                 instructions=refinig_instructions,
                 input=sel_hyp["chat_history"],
                 tools=[{"type": "web_search_preview"}],
-                store=False,
+                text = {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "refined_hypothesis_response",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "assistant_response": {"type": "string"},
+                                "refined_hypothesis_text": {"type": "string"}
+                            },
+                            "required": ["assistant_response", "refined_hypothesis_text"],
+                            "additionalProperties": False
+                        },
+                        "strict": True
+                    }
+                }
             )
-
-        sel_hyp["chat_history"].append({"role": "assistant", "content": response.output_text})
+        
+        response_json = json.loads(response.output_text)
+        
+        sel_hyp["chat_history"].append(
+            {"role": "assistant", 
+             "content": response_json["assistant_response"],
+             "refined_hypothesis_text": response_json["refined_hypothesis_text"]}
+        )
         st.rerun()
 
     # ACCEPT BUTTON
     acc_disabled = bool(sel_hyp["final_hypothesis"])
+    
     if st.button("✅ Accept refined hypothesis", disabled=acc_disabled, key="accept"):
-        sel_hyp["final_hypothesis"] = sel_hyp["chat_history"][-1]["content"]
+
+        if len(sel_hyp["chat_history"]) == 1:
+            # Introduce a similar structure to the refining 
+            pass
+
+
+        sel_hyp["final_hypothesis"] = sel_hyp["chat_history"][-1]["refined_hypothesis_text"]
         st.success("Hypothesis accepted!")
         st.rerun()
 
@@ -854,40 +919,6 @@ if st.session_state.app_state == "plan_manager":
 
 
 
-
-
-
-
-###############################################################################
-
-
-###############################################################################
-
-
-
-from typing import List, Dict, Any, Optional
-
-import base64
-import json
-import os
-import re
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-
-import streamlit as st
-from openai import OpenAI
-from openai.types.beta.assistant_stream_event import (
-    ThreadRunStepCreated,
-    ThreadRunStepDelta,
-    ThreadRunStepCompleted,
-    ThreadMessageCreated,
-    ThreadMessageDelta,
-)
-from openai.types.beta.threads.text_delta_block import TextDeltaBlock
-from openai.types.beta.threads.runs.code_interpreter_tool_call import (
-    CodeInterpreterOutputImage,
-    CodeInterpreterOutputLogs,
-)
 
 # -----------------------------------------------------------------------------
 # Utilities
