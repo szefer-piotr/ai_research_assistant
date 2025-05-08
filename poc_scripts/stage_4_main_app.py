@@ -128,6 +128,20 @@ For each hypothesis consider:
 - Supporting context (optional, if external sources were used):
 """
 
+refining_chat_response_instructions = """
+## Role
+You are an expert in ecological research and hypothesis development. 
+You have access to the dataset description provided by the user.
+You can access internet resources to find up-to-date ecological research or contextual knowledge.
+You are given a hypothesis that have been generated based on the dataset.
+
+## Task
+Respond to the user query. 
+When asked for your (assistant) response, 
+search the web if you need current research context and provide references to your web searches.
+In the `refined_hypothesis_text` field of your response always write a short, latest version of the refined hypothesis. 
+"""
+
 analyses_step_generation_instructions = """
 ## Role
 - You are an **expert in ecological research and statistical analysis**, with proficiency in **Python**.
@@ -253,6 +267,31 @@ hypotheses_schema = {
                 "strict": True
             }
         }
+
+
+
+hyp_refining_chat_response_schema = {
+    "format": {
+        "type": "json_schema",
+        "name": "hypothesis",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "title": { "type": "string" },
+                "assistant_response": { "type": "string" },
+                "refined_hypothesis_text": { "type": "string" }
+            },
+            "required": [
+                "title",
+                "assistant_response",
+                "refined_hypothesis_text"
+            ],
+            "additionalProperties": False
+        },
+        "strict": True
+    }
+}
+
 
 data_summary_assistant = client.beta.assistants.create(
     name="Data‑summarising Assistant",
@@ -510,6 +549,10 @@ def stream_data_summary(client: OpenAI):
         messages = client.beta.threads.messages.list(
             thread_id=thread_id, order="desc"
         ).data[0]
+
+        # print(f"Here sould be JSON conforming to the schema:\n\n{messages.content[0].text.value}")
+
+
         summary_dict = json.loads(messages.content[0].text.value)
     except Exception as e:
         st.error(f"❌ Could not parse JSON: {e}")
@@ -577,13 +620,6 @@ if st.session_state.app_state == "processing":
                 st.markdown(f"##### {col}\n*Description:* {m['description']}\n\n*Type:* {m['type']}.\n\n*Unique values:* {m['unique_value_count']}\n")
             # st.markdown(st.session_state.data_summary)
 
-    # if st.session_state.get("updated_hypotheses"):
-    #     # print(st.session_state.updated_hypotheses)
-    #     st.subheader("Refined hypotheses")
-    #     for hyp in st.session_state.updated_hypotheses["hypotheses"]:
-    #         with st.expander(hyp['title'], expanded=False):
-    #             st.markdown(render_hypothesis_md(hyp))
-
     if st.session_state.get("updated_hypotheses"):
         st.subheader("Refined hypotheses")
         for hyp in st.session_state.updated_hypotheses["assistant_response"]:
@@ -632,9 +668,6 @@ if st.session_state.app_state == "processing":
         # The hypotheses are being updated here
         st.session_state.updated_hypotheses = json.loads(response.output_text)
 
-        # lets have a look at what is being saveed there
-        print(f"RESPONSE OUTPUT: {response.output_text}")
-
         for hyp in st.session_state.updated_hypotheses["assistant_response"]:
             pretty_msg = format_initial_assistant_msg(hyp)
             hyp["chat_history"] = [{"role": "assistant", "content": pretty_msg}]
@@ -646,7 +679,6 @@ if st.session_state.app_state == "processing":
         st.rerun()
 
     # Show refined hypotheses summary (for preview)
-
 
     # MOVE TO NEXT STEP BUTTON
     with col2:
@@ -661,60 +693,19 @@ if st.session_state.app_state == "processing":
 
 
 
-
-
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# MAIN AREA – STAGE 2  (HYPOTHESIS MANAGER)
-# ────────────────────────────────────────────────────────────────────────────────
-
 if st.session_state.app_state == "hypotheses_manager":
     # ── SIDEBAR: list of hypotheses --------------------------------------------
     with st.sidebar:
         st.header("📑 Hypotheses")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####################################################################################
-
-####################################################################################
-
-
-
-########        ####### HERE I HAVE TO CORRECT THE DISPLAY
-
-##############
-
         for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"]):
             with st.expander(hyp["title"], expanded=False):
-                st.markdown(f"> {hyp['hypothesis_refined_with_data_text']}")
+                
+                if hyp["final_hypothesis"]:
+                    st.markdown(f"> {hyp['final_hypothesis']}")
+
+                else:
+                    st.markdown(f"> {hyp['hypothesis_refined_with_data_text']}")
                 
                 if st.button("✏️ Edit", key=f"select_{idx}"):
                     st.session_state.selected_hypothesis = idx
@@ -743,8 +734,6 @@ if st.session_state.app_state == "hypotheses_manager":
 
     st.subheader(f"🗣️ Discussion – {sel_hyp['title']}")
 
-    print(sel_hyp)
-
     # display chat history
     for msg in sel_hyp["chat_history"]:
         with st.chat_message(msg["role"]):
@@ -756,47 +745,26 @@ if st.session_state.app_state == "hypotheses_manager":
     if user_prompt:
         sel_hyp["chat_history"].append({"role": "user", "content": user_prompt})
 
-
-
-
-
-
-
-
-
-        #### Here strip the full chat history from the refined_hypothesis_text key
-
-
-        #   # ######  ####   #####
-        #   # #       #   #  #
-        ##### ####    ####   ###
-        #   # #       #  #   #
-        #   # ######  #   #  #####
-
-
-
-
-
-
-
-
-
-
-
-
-        print(f"\n\n{sel_hyp['chat_history']}")
+        response_input_history = [{
+            k: v for k, v in d.items() if k != "refined_hypothesis_text"} for d in sel_hyp["chat_history"]
+            ]
 
         with st.spinner("Thinking …"):
             response = client.responses.create(
                 model="gpt-4o",
-                instructions=refinig_instructions,
-                input=sel_hyp["chat_history"],
+                instructions=refining_chat_response_instructions,
+                input= [{
+                    "role": "user", 
+                    "content": f"Here is the summary of the data: {st.session_state.data_summary}"
+                }] + response_input_history,
                 tools=[{"type": "web_search_preview"}],
-                text = hypotheses_schema
+                text = hyp_refining_chat_response_schema,
             )
         
         response_json = json.loads(response.output_text)
-        
+
+        print(f"\n\nTHE RESPONSE JSON:\n\n{response_json}")
+
         sel_hyp["chat_history"].append(
             {"role": "assistant", 
              "content": response_json["assistant_response"],
@@ -808,12 +776,6 @@ if st.session_state.app_state == "hypotheses_manager":
     acc_disabled = bool(sel_hyp["final_hypothesis"])
     
     if st.button("✅ Accept refined hypothesis", disabled=acc_disabled, key="accept"):
-
-        if len(sel_hyp["chat_history"]) == 1:
-            # Introduce a similar structure to the refining 
-            pass
-
-
         sel_hyp["final_hypothesis"] = sel_hyp["chat_history"][-1]["refined_hypothesis_text"]
         st.success("Hypothesis accepted!")
         st.rerun()
