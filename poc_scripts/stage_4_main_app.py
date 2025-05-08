@@ -76,6 +76,7 @@ st.set_page_config(page_title="Research assistant",
 data_summary_instructions = """
 Task: Run Python code to read the provided files to summarize the dataset by analyzing its columns.
 Extract and list all column names.
+Always analyze the entire dataset, this is very important.
 For each column:
 - Provide column name.
 - Infer a human-readable description of what the column likely represents.
@@ -84,58 +85,67 @@ For each column:
 """
 
 processing_files_instruction = """
-Task: Based on the provided data summary, perform a critical analysis of each given hypothesis.
-Assess Testability: Determine whether each hypothesis can be tested using the provided data. Justify your reasoning by referencing the relevant variables and their formats.
-Identify Issues: Highlight any conceptual, statistical, or practical issues that may hinder testing — e.g., vague metrics, missing data, confounding variables, or unclear expected effects.
-Refine Hypotheses: Suggest a clear and testable version of each hypothesis. Each refined hypothesis should:
-Be logically structured and grounded in the data.
-Include a specific metric to be analyzed.
-Indicate the direction or nature of the expected change (e.g., increase/decrease, positive/negative correlation).
-Be framed in a way that is statistically testable.
-Support with External Knowledge: If needed, search the web or draw from scientific literature to refine or inform the hypotheses.
+## Task 
+Based on the provided data summary, perform a critical analysis of each given hypothesis, and under the `hypothesis_refined_with_data_text` key do the following:
+1. Assess Testability: Determine whether each hypothesis can be tested using the provided data. Justify your reasoning by referencing the relevant variables and their formats.
+2. Identify Issues: Highlight any conceptual, statistical, or practical issues that may hinder testing — e.g., vague metrics, missing data, confounding variables, or unclear expected effects.
+3. Refine Hypotheses: Suggest a clear and testable version of each hypothesis. 
+4. Each refined hypothesis should: 
+- Be logically structured and grounded in the data.
+- Include a specific metric to be analyzed.
+- Indicate the direction or nature of the expected change (e.g., increase/decrease, positive/negative correlation).
+- Refined hypotheses should be framed in a way that is statistically testable.
+5 Support with External Knowledge: If needed, search the web or draw from scientific literature to refine or inform the hypotheses.
+
+## Instructions
+- Under the `refined_hypothesis_text` field of your response always write a short, latest version of the refined hypothesis.
+- Under the `refined_hypothesis_text` field of your response always write a short, latest version of the refined hypothesis.
 """
 
 refinig_instructions = """
-
+## Role
 You are an expert in ecological research and hypothesis development.
 You have access to the dataset description provided by the user.
 You can access internet resources to find up-to-date ecological research or contextual knowledge.
 You are given a hypothesis that have been generated based on the dataset.
 
+## Task
 Your task is to help refine the hypotheses provided by the user based also on the user input.
+Search the web for current reaserch related to the provided hypotheses.
 
-Instructions:
-Critically analyze the dataset shared by the user.
-
-Evaluate a hypothesis to determine whether:
-- It aligns with ecological theory or known patterns (search the web).
-- Can be tested using the available data (based on variable types, structure, and coverage).
-- If necessary, search the web for up-to-date ecological research or contextual knowledge to inform the refinement process.
-
-For each hypothesis, suggest a refined version that:
-- Clearly defines the expected relationship or effect.
-- ALWAYS includes specific variables or metrics from the dataset. THIS IS VERY IMPORTANT!.
-- Is phrased in a way that is statistically testable.
-
+## Instructions:
 Important Constraints:
 - Do not respond to any questions unrelated to the provided hypotheses.
 - Use domain knowledge and data-driven reasoning to ensure each refined hypothesis is grounded in ecological theory and evidence.
 
-For each hypothesis consider:
+For each hypothesis under the key `hypothesis_refined_with_data_text`:
+1. Evaluate whether:
+- It aligns with ecological theory or known patterns (search the web).
+- Can be tested using the available data (based on variable types, structure, and coverage).
+- If necessary, search the web for up-to-date ecological research or contextual knowledge to inform the refinement process.
 - Can it be tested? (Yes/No with explanation)
 - Issues or concerns with the hypothesis (if any).
-- Refined Hypothesis
-- Supporting context (optional, if external sources were used):
+- Refined Hypothesis.
+- Supporting context (optional, if external sources were used).
+
+2. Suggest a refined version that:
+- Clearly defines the expected relationship or effect.
+- ALWAYS includes specific variables or metrics from the dataset. THIS IS VERY IMPORTANT!.
+- Is phrased in a way that is statistically testable.
+
+3. Under the `refined_hypothesis_text` field of your response always write a short, 
+  latest version of the refined hypothesis.
 """
 
 refining_chat_response_instructions = """
 ## Role
-You are an expert in ecological research and hypothesis development. 
+You are a seassoned expert in ecological research and hypothesis development. 
+You are helping reserchers in their work by providing them assistance in hypotheses development.
+
+## Task
 You have access to the dataset description provided by the user.
 You can access internet resources to find up-to-date ecological research or contextual knowledge.
 You are given a hypothesis that have been generated based on the dataset.
-
-## Task
 Respond to the user query. 
 When asked for your (assistant) response, 
 search the web if you need current research context and provide references to your web searches.
@@ -144,7 +154,7 @@ In the `refined_hypothesis_text` field of your response always write a short, la
 
 analyses_step_generation_instructions = """
 ## Role
-- You are an **expert in ecological research and statistical analysis**, with proficiency in **Python**.
+- You are an expert in ecological research and statistical analysis**, with proficiency in **Python**.
 - You must apply the **highest quality statistical methods and approaches** in data analysis.
 - Your suggestions should be based on **best practices in ecological data analysis**.
 - Your role is to **provide guidance, suggestions, and recommendations** within your area of expertise.
@@ -185,10 +195,10 @@ STAGE_INFO = {
         "title": "4 · Analysis Plan Manager",
         "description": (
             "For every accepted hypothesis, the assistant drafts a numbered "
-            "analysis plan. Request revisions until it’s perfect, then approve."
+            "analysis plan. Request revisions until it's perfect, then approve."
         ),
         "how_it_works": (
-            "GPT‑4o generates JSON‑structured plans; the app validates the JSON "
+            "GPT-4o generates JSON-structured plans; the app validates the JSON "
             "before allowing approval."
         ),
     },
@@ -199,7 +209,7 @@ STAGE_INFO = {
             "logs, and visuals live. You can pause, discuss, or rerun analyses."
         ),
         "how_it_works": (
-            "A code‑interpreter assistant streams run events. The app captures "
+            "A code-interpreter assistant streams run events. The app captures "
             "code inputs, outputs, and generated images, storing them for replay."
         ),
     },
@@ -218,6 +228,7 @@ STAGE_INFO = {
 }
 
 
+# Response formats for ASSISTANTS
 class DataSummary(BaseModel):
     column_name: str
     description: str
@@ -239,7 +250,7 @@ response_format={
     "json_schema": schema_payload
 }
 
-
+# Response formats for chat responses.
 hypotheses_schema = {
             "format": {
                 "type": "json_schema",
@@ -253,9 +264,12 @@ hypotheses_schema = {
                                 "type": "object",
                                 "properties": {
                                     "title": {"type": "string"},
-                                    "hypothesis_refined_with_data_text": {"type": "string"}
+                                    "hypothesis_refined_with_data_text": {"type": "string"},
+                                    "refined_hypothesis_text": {"type": "string"},
                                 },
-                                "required": ["title", "hypothesis_refined_with_data_text"],
+                                "required": ["title", 
+                                             "hypothesis_refined_with_data_text",
+                                             "refined_hypothesis_text"],
                                 "additionalProperties": False
                             }
                         },
@@ -327,7 +341,6 @@ if "data_summary" not in st.session_state:
     st.session_state.data_summary = ""
 if "hypotheses" not in st.session_state:
     st.session_state.hypotheses = ""
-# Comment this after checking the plan.
 if "hypotheses_refined" not in st.session_state:
     st.session_state.hypotheses_refined = False
 if "refined_hypotheses" not in st.session_state:
@@ -408,22 +421,6 @@ st.markdown(
 )
 
 
-# def render_hypothesis_md(hyp: dict) -> str:
-#     """Return a markdown block for a single refined hypothesis."""
-#     md = [f"### {hyp['title']}"]
-
-#     if hyp.get("steps"):
-#         md.append("**Rationale:**")
-#         for i, s in enumerate(hyp["steps"], start=1):
-#             md.append(f"{i}. {s['step']}")
-
-#     if hyp.get("final_hypothesis"):
-#         md.append("\n> **Final refined hypothesis**:\n>")
-#         md.append(f"> {hyp['final_hypothesis']}")
-
-#     return "\n".join(md)
-
-# Updated helper
 def render_hypothesis_md(hyp: dict) -> str:
     """Return a markdown block for a single refined hypothesis."""
     md = [f"### {hyp['title']}"]
@@ -435,19 +432,6 @@ def render_hypothesis_md(hyp: dict) -> str:
     return "\n".join(md)
 
 
-# def format_initial_assistant_msg(title: str, steps: list[dict]) -> str:
-#     """Return formatted markdown for the assistant seed message."""
-#     lines = [f"**Refined hypothesis:** {title}", "", "**Rationale:**"]
-#     lines += [f"{idx}. {step['step']}" for idx, step in enumerate(steps, start=1)]
-#     return "\n".join(lines)
-
-# def format_initial_assistant_msg(title: str, steps: list[str]) -> str:
-#     """Return formatted markdown for the assistant seed message."""
-#     lines = [f"**Refined hypothesis:** {title}", "", "**Rationale:**"]
-#     lines += [f"{idx}. {step}" for idx, step in enumerate(steps, start=1)]
-#     return "\n".join(lines)
-
-# Updated helper
 def format_initial_assistant_msg(hyp: dict) -> str:
     """Return formatted markdown for the assistant seed message."""
     return f"**Refined hypothesis:** {hyp['title']}\n\n{hyp['hypothesis_refined_with_data_text']}"
@@ -602,6 +586,16 @@ if st.session_state.app_state in {"upload", "processing"}:
 
 
 
+
+
+
+
+
+
+
+
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # MAIN AREA – STAGE 2  (PROCESSING)
 # ────────────────────────────────────────────────────────────────────────────────
@@ -728,6 +722,9 @@ if st.session_state.app_state == "hypotheses_manager":
     sel_idx = st.session_state.selected_hypothesis
     sel_hyp = st.session_state.updated_hypotheses["assistant_response"][sel_idx]
 
+    import pprint
+    pprint.pprint(f"\n\nSELECTED HYPOTHESIS FROM THE UPDATED HYPOTHESES:\n\n{sel_hyp}")
+
     # st.subheader(STAGE_INFO["hypotheses_manager"]["title"])
     # st.write(STAGE_INFO["hypotheses_manager"]["description"])
     # st.write(STAGE_INFO["hypotheses_manager"]["how_it_works"])
@@ -776,7 +773,10 @@ if st.session_state.app_state == "hypotheses_manager":
     acc_disabled = bool(sel_hyp["final_hypothesis"])
     
     if st.button("✅ Accept refined hypothesis", disabled=acc_disabled, key="accept"):
-        sel_hyp["final_hypothesis"] = sel_hyp["chat_history"][-1]["refined_hypothesis_text"]
+        if len(sel_hyp["chat_history"]) > 1:
+            sel_hyp["final_hypothesis"] = sel_hyp["chat_history"][-1]["refined_hypothesis_text"]
+        else:
+            sel_hyp["final_hypothesis"] = sel_hyp["refined_hypothesis_text"]
         st.success("Hypothesis accepted!")
         st.rerun()
 
@@ -784,6 +784,15 @@ if st.session_state.app_state == "hypotheses_manager":
     if all(h["final_hypothesis"] for h in st.session_state.updated_hypotheses["assistant_response"]):
         st.session_state.app_state = "plan_manager"  # next stage placeholder
         st.rerun()
+
+
+
+
+
+
+
+
+
 
 
 
@@ -813,9 +822,6 @@ def ensure_plan_keys(h):
     h.setdefault("analysis_plan_accepted", False)
     return h
 
-# ----------------------------------------------------------------------------
-# PLAN MANAGER STAGE
-# ----------------------------------------------------------------------------
 
 def plan_manager(client: OpenAI):
     """Stage 3 – manage analysis‑plan creation & approval."""
@@ -827,7 +833,7 @@ def plan_manager(client: OpenAI):
     # ------------------------------------------------------------------
     with st.sidebar:
         st.header("Accepted hypotheses")
-        for idx, h in enumerate(st.session_state.updated_hypotheses["hypotheses"]):
+        for idx, h in enumerate(st.session_state.updated_hypotheses["assistant_response"]):
             title = f"Hypothesis {idx+1}"
             with st.expander(title, expanded=False):
                 st.markdown(h["final_hypothesis"], unsafe_allow_html=True)
@@ -837,8 +843,10 @@ def plan_manager(client: OpenAI):
 
     # Which hypothesis is in focus?
     current = st.session_state.get("current_hypothesis_idx", 0)
+
+    print(f"\n\nUpdated hypothesis:\n\n{st.session_state.updated_hypotheses}")
     hypo_obj = ensure_plan_keys(
-        st.session_state.updated_hypotheses["hypotheses"][current]
+        st.session_state.updated_hypotheses["assistant_response"][current]
     )
 
     st.subheader(f"Analysis Plan Manager – Hypothesis {current+1}")
@@ -908,12 +916,12 @@ def plan_manager(client: OpenAI):
     # ------------------------------------------------------------------
     all_ready = all(
         h.get("analysis_plan") and h.get("analysis_plan_accepted")
-        for h in st.session_state.updated_hypotheses["hypotheses"]
+        for h in st.session_state.updated_hypotheses["assistant_response"]
     )
 
     if all_ready:
 
-        print(st.session_state.updated_hypotheses["hypotheses"])
+        print(st.session_state.updated_hypotheses["assistant_response"])
 
         if st.button("➡️ Move to plan execution stage"):
             st.session_state.app_state = "plan_execution"
@@ -1001,7 +1009,7 @@ def plan_execution(client: OpenAI):
     # ------------------------------------------------------------------
     with st.sidebar:
         st.header("Accepted hypotheses")
-        for idx, h in enumerate(st.session_state.updated_hypotheses["hypotheses"]):
+        for idx, h in enumerate(st.session_state.updated_hypotheses["assistant_response"]):
             title = f"Hypothesis {idx+1}"
             with st.expander(title, expanded=False):
                 st.markdown(h["final_hypothesis"], unsafe_allow_html=True)
@@ -1012,7 +1020,7 @@ def plan_execution(client: OpenAI):
     # Which hypothesis are we executing?
     current = st.session_state.get("current_exec_idx", 0)
     hypo_obj = ensure_execution_keys(
-        st.session_state.updated_hypotheses["hypotheses"][current])
+        st.session_state.updated_hypotheses["assistant_response"][current])
 
     # ------------------------------------------------------------------
     # Parse analysis plan robustly
@@ -1332,10 +1340,12 @@ if st.session_state.app_state == "report_generation":
 
 # Transition logic – once *all* hypotheses have at least one assistant
 # message inside `plan_execution_chat_history`, enable report stage.
+# print(f"\n\nUPDATED HYPS:\n\n{st.session_state.updated_hypotheses['assistant_response']}")
+
 if (
     st.session_state.app_state == "plan_execution"
     and all(
-        h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["hypotheses"]
+        h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["assistant_response"]
     )
 ):
     if st.sidebar.button("➡️ Generate final report"):
