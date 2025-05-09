@@ -161,6 +161,34 @@ analyses_step_generation_instructions = """
 - Students will seek your assistance with **data analysis, interpretation, and statistical methods**.
 - Since students have **limited statistical knowledge**, your responses should be **simple and precise**.
 - Students also have **limited programming experience**, so provide **clear and detailed instructions**.
+
+## Task
+You have to generate an analysis plan for the provided hypothesis that can be tested on users dataset, for which a summary is provided.
+
+## Instructions
+- As the `assistant_chat_response`, generate a plan that is readable for the user contains explanations and motivations for the methods used.
+- Keep a simpler version of the plan with clear and programmatically executable steps as `current_execution_plan` for further execution.
+"""
+
+analyses_step_chat_instructions = """
+## Role
+- You are an expert in ecological research and statistical analysis**, with proficiency in **Python**.
+- You must apply the **highest quality statistical methods and approaches** in data analysis.
+- Your suggestions should be based on **best practices in ecological data analysis**.
+- Your role is to **provide guidance, suggestions, and recommendations** within your area of expertise.
+- Students will seek your assistance with **data analysis, interpretation, and statistical methods**.
+- Since students have **limited statistical knowledge**, your responses should be **simple and precise**.
+- Students also have **limited programming experience**, so provide **clear and detailed instructions**.
+
+## Task
+You have to respond to a user querry about the analysis plan. 
+Be profesional and provide best answer possible.
+Search the web if necessary for the best and latest analytical tools.
+Be encouraging, and suggest best solutions.
+
+## Instructions
+- As the `assistant_chat_response`, generate a plan that is readable for the user contains explanations and motivations for the methods used.
+- Keep a simpler version of the plan with clear and programmatically executable steps as `current_execution_plan` for further execution.
 """
 
 step_execution_assistant_instructions = """
@@ -172,6 +200,7 @@ You are an expert in ecological research and statistical analysis in Python.
 - execute code, write description and short summary forr all of the steps.
 """
 
+# develop more: feat10
 step_execution_instructions = """
 Execute in code every step of the analysis plan.
 """
@@ -250,7 +279,8 @@ response_format={
     "json_schema": schema_payload
 }
 
-# Response formats for chat responses.
+
+# Response formats for CHAT RESPONSES.
 hypotheses_schema = {
             "format": {
                 "type": "json_schema",
@@ -283,7 +313,6 @@ hypotheses_schema = {
         }
 
 
-
 hyp_refining_chat_response_schema = {
     "format": {
         "type": "json_schema",
@@ -306,7 +335,26 @@ hyp_refining_chat_response_schema = {
     }
 }
 
+# Schema that works for plan generation and for the chat responses as well (line 936)
+plan_generation_response_schema = {
+    "format": {
+        "type": "json_schema",
+        "name": "plan_generation_response",
+        "schema": {
+            "type": "object",
+            "properties": {"assistant_response":{"type": "string"}, # optional steps
+                           "current_plan_execution":{"type": "string"}},
+            "required": ["assistant_response","current_plan_execution"],
+            "additionalProperties": False
+        },
+        "strict": True        
+    }
+}
 
+# plan_generation_chat_response_schema = {"format": {"type": "text"}}
+
+
+# ASSISTANTS
 data_summary_assistant = client.beta.assistants.create(
     name="Data‑summarising Assistant",
     model="gpt-4o-2024-08-06",
@@ -722,8 +770,8 @@ if st.session_state.app_state == "hypotheses_manager":
     sel_idx = st.session_state.selected_hypothesis
     sel_hyp = st.session_state.updated_hypotheses["assistant_response"][sel_idx]
 
-    import pprint
-    pprint.pprint(f"\n\nSELECTED HYPOTHESIS FROM THE UPDATED HYPOTHESES:\n\n{sel_hyp}")
+    # import pprint
+    # pprint.pprint(f"\n\nSELECTED HYPOTHESIS FROM THE UPDATED HYPOTHESES:\n\n{sel_hyp}")
 
     # st.subheader(STAGE_INFO["hypotheses_manager"]["title"])
     # st.write(STAGE_INFO["hypotheses_manager"]["description"])
@@ -760,7 +808,7 @@ if st.session_state.app_state == "hypotheses_manager":
         
         response_json = json.loads(response.output_text)
 
-        print(f"\n\nTHE RESPONSE JSON:\n\n{response_json}")
+        # print(f"\n\nTHE RESPONSE JSON:\n\n{response_json}")
 
         sel_hyp["chat_history"].append(
             {"role": "assistant", 
@@ -858,24 +906,36 @@ def plan_manager(client: OpenAI):
                 f"Here is the data summary: {st.session_state.data_summary}\n\n"
                 f"Here is the hypothesis: {hypo_obj['final_hypothesis']}"
             )
+
+            prompt_str = "".join(prompt)
+
+            chat_hist.append({"role": "user", "content": prompt_str})
+
             with st.spinner("Generating …"):
                 resp = client.responses.create(
                     model="gpt-4o",
                     temperature=0,
                     instructions=analyses_step_generation_instructions,
-                    input=prompt,
+                    input=prompt_str,
                     stream=False,
-                    text={"format": {"type": "text"}},
+                    tools=[{"type": "web_search_preview"}],
+                    text=plan_generation_response_schema,
                     store=False,
                 )
+
+            print(f"\n\nResponse from the plan generation response:\n\n{resp}")
+
             chat_hist.append({"role": "assistant", "content": resp.output_text})
+
             st.rerun()
 
     if not hypo_obj["analysis_plan_accepted"]:
+        
         # Show existing chat
-        for m in chat_hist:
+        for m in chat_hist[1:]:
             with st.chat_message(m["role"]):
-                st.markdown(m["content"], unsafe_allow_html=True)
+                message = json.loads(m["content"])
+                st.markdown(message["assistant_response"], unsafe_allow_html=True)
 
         user_msg = st.chat_input("Refine this analysis plan …")
 
@@ -886,10 +946,11 @@ def plan_manager(client: OpenAI):
                 resp = client.responses.create(
                     model="gpt-4o",
                     temperature=0,
-                    instructions=analyses_step_generation_instructions,
+                    instructions=analyses_step_chat_instructions,
                     input=chat_hist,
                     stream=False,
-                    text={"format": {"type": "text"}},
+                    tools=[{"type": "web_search_preview"}],
+                    text=plan_generation_response_schema,
                     store=False,
                 )
             chat_hist.append({"role": "assistant", "content": resp.output_text})
@@ -912,7 +973,7 @@ def plan_manager(client: OpenAI):
 
     if all_ready:
 
-        print(st.session_state.updated_hypotheses["assistant_response"])
+        # print(st.session_state.updated_hypotheses["assistant_response"])
 
         if st.button("➡️ Move to plan execution stage"):
             st.session_state.app_state = "plan_execution"
@@ -924,10 +985,23 @@ if st.session_state.app_state == "plan_manager":
 
 
 
-# -----------------------------------------------------------------------------
-# Utilities
-# -----------------------------------------------------------------------------
-# … imports & other stage code remain unchanged …
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 IMG_DIR = Path("images"); IMG_DIR.mkdir(exist_ok=True)
 JSON_RE  = re.compile(r"\{[\s\S]*?\}")
