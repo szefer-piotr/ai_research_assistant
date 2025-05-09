@@ -824,13 +824,11 @@ def ensure_plan_keys(h):
 
 
 def plan_manager(client: OpenAI):
-    """Stage 3 – manage analysis‑plan creation & approval."""
+    """Stage 3 - manage analysis - plan creation & approval."""
+    
     if st.session_state.app_state != "plan_manager":
         return
 
-    # ------------------------------------------------------------------
-    # Sidebar: list accepted hypotheses
-    # ------------------------------------------------------------------
     with st.sidebar:
         st.header("Accepted hypotheses")
         for idx, h in enumerate(st.session_state.updated_hypotheses["assistant_response"]):
@@ -844,17 +842,14 @@ def plan_manager(client: OpenAI):
     # Which hypothesis is in focus?
     current = st.session_state.get("current_hypothesis_idx", 0)
 
-    print(f"\n\nUpdated hypothesis:\n\n{st.session_state.updated_hypotheses}")
     hypo_obj = ensure_plan_keys(
         st.session_state.updated_hypotheses["assistant_response"][current]
     )
 
-    st.subheader(f"Analysis Plan Manager – Hypothesis {current+1}")
+    st.subheader(f"Analysis Plan Manager - Hypothesis {current+1}")
     st.markdown(hypo_obj["final_hypothesis"], unsafe_allow_html=True)
 
-    # ------------------------------------------------------------------
     # Plan generation / chat
-    # ------------------------------------------------------------------
     chat_hist = hypo_obj["analysis_plan_chat_history"]
 
     if not chat_hist:  # first‑time plan generation
@@ -883,8 +878,10 @@ def plan_manager(client: OpenAI):
                 st.markdown(m["content"], unsafe_allow_html=True)
 
         user_msg = st.chat_input("Refine this analysis plan …")
+
         if user_msg:
             chat_hist.append({"role": "user", "content": user_msg})
+            
             with st.spinner("Thinking …"):
                 resp = client.responses.create(
                     model="gpt-4o",
@@ -904,16 +901,10 @@ def plan_manager(client: OpenAI):
                 hypo_obj["analysis_plan_accepted"] = True
                 st.rerun()
 
-    # ------------------------------------------------------------------
-    # Show accepted plan
-    # ------------------------------------------------------------------
     if hypo_obj["analysis_plan_accepted"]:
         st.success("Plan accepted")
         st.markdown(hypo_obj["analysis_plan"], unsafe_allow_html=True)
 
-    # ------------------------------------------------------------------
-    # Advance once **all** hypotheses have an accepted plan
-    # ------------------------------------------------------------------
     all_ready = all(
         h.get("analysis_plan") and h.get("analysis_plan_accepted")
         for h in st.session_state.updated_hypotheses["assistant_response"]
