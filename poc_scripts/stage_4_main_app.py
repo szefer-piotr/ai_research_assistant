@@ -98,7 +98,7 @@ Based on the provided data summary, perform a critical analysis of each given hy
 5 Support with External Knowledge: If needed, search the web or draw from scientific literature to refine or inform the hypotheses.
 
 ## Instructions
-- Under the `refined_hypothesis_text` field of your response always write a short, latest version of the refined hypothesis.
+- Under the `hypothesis_refined_with_data_text` write the more extended version of the hypotheses refinements.
 - Under the `refined_hypothesis_text` field of your response always write a short, latest version of the refined hypothesis.
 """
 
@@ -111,7 +111,7 @@ You are given a hypothesis that have been generated based on the dataset.
 
 ## Task
 Your task is to help refine the hypotheses provided by the user based also on the user input.
-Search the web for current reaserch related to the provided hypotheses.
+Search the web for current reaserch related to the provided hypotheses.  WIKIPEDIA IS NOT A RELIABLE SOURCE!
 
 ## Instructions:
 Important Constraints:
@@ -120,9 +120,10 @@ Important Constraints:
 
 For each hypothesis under the key `hypothesis_refined_with_data_text`:
 1. Evaluate whether:
-- It aligns with ecological theory or known patterns (search the web).
+- It aligns with ecological theory or known patterns (search the web, WIKIPEDIA IS NOT A RELIABLE SOURCE!).
 - Can be tested using the available data (based on variable types, structure, and coverage).
 - If necessary, search the web for up-to-date ecological research or contextual knowledge to inform the refinement process.
+- WIKIPEDIA IS NOT A RELIABLE SOURCE!
 - Can it be tested? (Yes/No with explanation)
 - Issues or concerns with the hypothesis (if any).
 - Refined Hypothesis.
@@ -149,6 +150,7 @@ You are given a hypothesis that have been generated based on the dataset.
 Respond to the user query. 
 When asked for your (assistant) response, 
 search the web if you need current research context and provide references to your web searches.
+WIKIPEDIA IS NOT A RELIABLE SOURCE!
 In the `refined_hypothesis_text` field of your response always write a short, latest version of the refined hypothesis. 
 """
 
@@ -170,6 +172,15 @@ You are an expert in ecological research and statistical analysis in Python.
 - execute the analysis plan provided by the user STEP BY STEP. 
 - Write code in Python for each step to of the analysis plan from the beginning to the end.
 - execute code, write description and short summary forr all of the steps.
+"""
+
+step_execution_chat_assistant_instructions = """
+## Role
+You are an expert in ecological research and statistical analysis in Python. 
+## Task
+- respond to the users queries about the elements of the analysis execution.
+- write Python code as a response to the user query.
+- execute code, write description and short summary as a response to the user query.
 """
 
 step_execution_instructions = """
@@ -320,6 +331,15 @@ analysis_assistant = client.beta.assistants.create(
     name="Analysis Assistant",
     temperature=0,
     instructions=step_execution_assistant_instructions,
+    tools=[{"type": "code_interpreter"}],
+    model="gpt-4o"
+    )
+
+
+analysis_chat_assistant = client.beta.assistants.create(
+    name="Analysis Assistant",
+    temperature=0,
+    instructions=step_execution_chat_assistant_instructions,
     tools=[{"type": "code_interpreter"}],
     model="gpt-4o"
     )
@@ -649,11 +669,11 @@ if st.session_state.app_state == "processing":
             f"Data summary: {st.session_state.data_summary}\n\n"
             f"Hypotheses: {st.session_state.hypotheses}\n\n"
             f"{processing_files_instruction}\n"
-            "Extract individual hypotheses and refine them one by one."
         )
 
         response = client.responses.create(
             model="gpt-4o",
+            instructions=refinig_instructions,
             input=[{"role": "user", "content": refine_prompt}],
             tools=[{"type": "web_search_preview"}],
             text=hypotheses_schema,
@@ -797,9 +817,8 @@ if st.session_state.app_state == "hypotheses_manager":
 
 
 
-# ────────────────────────────────────────────────────────────────────────────────
-# STAGE‑3  ▸  ANALYSIS PLAN MANAGER
-# ────────────────────────────────────────────────────────────────────────────────
+
+# STAGE 3 ANALYSIS PLAN MANAGER
 
 def pretty_markdown_plan(raw_json: str) -> str:
     """Convert the assistant‑returned JSON (analyses → steps) into Markdown."""
@@ -1068,15 +1087,10 @@ def plan_execution(client: OpenAI):
         # Choose assistant instructions
         instructions = user_prompt if user_prompt else step_execution_instructions
 
-        if user_prompt:
-            hypo_obj["plan_execution_chat_history"].append(
-                {"role": "user", "content": user_prompt}
-            )
-
         client.beta.threads.messages.create(
             thread_id=st.session_state.thread_id,
             role="user",
-            content=f"\n\nThe analysis plan to execute:\n{json.dumps(plan_dict, indent=2)}",
+            content=f"\n\nThe analysis plan:\n{json.dumps(plan_dict, indent=2)}",
         )
 
         # Live placeholders
@@ -1093,13 +1107,32 @@ def plan_execution(client: OpenAI):
             if not assistant_items or assistant_items[-1]["type"] != tp:
                 assistant_items.append({"type": tp, "content": "" if tp != "image" else []})
 
-        stream = client.beta.threads.runs.create(
-            thread_id    = st.session_state.thread_id,
-            assistant_id = analysis_assistant.id,
-            instructions = instructions,
-            tool_choice  = {"type": "code_interpreter"},
-            stream       = True,
-        )
+        if run_analysis:
+            stream = client.beta.threads.runs.create(
+                thread_id    = st.session_state.thread_id,
+                assistant_id = analysis_assistant.id,
+                instructions = instructions,
+                tool_choice  = {"type": "code_interpreter"},
+                stream       = True,
+            )
+        elif user_prompt:
+            hypo_obj["plan_execution_chat_history"].append(
+                {"role": "user", "content": user_prompt}
+            )
+
+            client.beta.threads.messages.create(
+                thread_id=st.session_state.thread_id,
+                role="user",
+                content=user_prompt,
+            )
+
+            stream = client.beta.threads.runs.create(
+                thread_id    = st.session_state.thread_id,
+                assistant_id = analysis_chat_assistant.id,
+                instructions = instructions,
+                tool_choice  = {"type": "code_interpreter"},
+                stream       = True,
+            )
 
         for event in stream:
             if isinstance(event, ThreadRunStepCreated):
@@ -1159,9 +1192,6 @@ def plan_execution(client: OpenAI):
 
         st.rerun()
 
-# -----------------------------------------------------------------------------
-# ROUTER – call the appropriate stage function each run
-# -----------------------------------------------------------------------------
 
 if st.session_state.app_state == "plan_execution":
     plan_execution(client)
