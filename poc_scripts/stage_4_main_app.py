@@ -982,7 +982,10 @@ def plan_manager(client: OpenAI):
 
     if hypo_obj["analysis_plan_accepted"]:
         st.success("Plan accepted")
-        st.markdown(hypo_obj["analysis_plan"], unsafe_allow_html=True)
+
+        plan_json = json.loads(hypo_obj["analysis_plan"])
+
+        st.markdown(plan_json["assistant_response"], unsafe_allow_html=True)
 
     all_ready = all(
         h.get("analysis_plan") and h.get("analysis_plan_accepted")
@@ -1112,9 +1115,11 @@ def plan_execution(client: OpenAI):
     if not plan_dict:
         st.error("❌ Could not parse analysis plan JSON. Please regenerate the plan in the previous stage or ask the assistant to output valid JSON.")
         return
+    
+    print(f"\n\nPLAN DICT\n\n:{plan_dict}")
 
-    plan_title = plan_dict["analyses"][0]["title"]
-    plan_steps = plan_dict["analyses"][0]["steps"]
+    st.markdown(plan_dict['assistant_response'])
+    st.markdown(plan_dict['current_plan_execution'])
 
     # Normalise stored plan to dict for future safety
     if isinstance(hypo_obj["analysis_plan"], str):
@@ -1123,10 +1128,10 @@ def plan_execution(client: OpenAI):
     # ------------------------------------------------------------------
     # Main canvas – plan outline + chat / execution UI
     # ------------------------------------------------------------------
-    st.subheader(f"Hypothesis {current+1}: {plan_title}")
-    st.markdown("### Plan steps")
-    for num, s in enumerate(plan_steps, start=1):
-        st.markdown(f"{num}. {s['step']}")
+    # st.subheader(f"Hypothesis {current+1}: {plan_title}")
+    # st.markdown("### Plan steps")
+    # for num, s in enumerate(plan_steps, start=1):
+    #     st.markdown(f"{num}. {s['step']}")
 
     # Previous transcript ------------------------------------------------
     for msg in hypo_obj["plan_execution_chat_history"]:
@@ -1273,6 +1278,38 @@ if st.session_state.app_state == "plan_execution":
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ────────────────────────────────────────────────────────────────────────────────
 # STAGE‑4  ▸  REPORT GENERATION
 # ────────────────────────────────────────────────────────────────────────────────
@@ -1308,20 +1345,20 @@ Your task is to craft a peer‑reviewed‑quality report based on:
 • Any additional context you can gather from current literature.
 
 **Report structure (Markdown):**
-1. **Title & Abstract** – concise overview of aims and main findings.
-2. **Introduction** – brief ecological background and rationale.
-3. **Methodology** – one paragraph describing data sources, key variables, and
-   statistical procedures actually executed (e.g., GLM, mixed‑effects model,
+1. **Title & Abstract** - concise overview of aims and main findings.
+2. **Introduction** - brief ecological background and rationale.
+3. **Methodology** - one paragraph describing data sources, key variables, and
+   statistical procedures actually executed (e.g., GLM, mixed-effects model,
    correlation analysis, etc.).  *Use past tense.*
-4. **Results** – interpret statistical outputs for **each hypothesis**,
+4. **Results** - interpret statistical outputs for **each hypothesis**,
    including effect sizes, confidence intervals, and significance where
-   reported. Embed any relevant numeric values (means, p‑values, etc.).
-5. **Discussion** – compare findings with recent studies retrieved via
+   reported. Embed any relevant numeric values (means, p-values, etc.).
+5. **Discussion** - compare findings with recent studies retrieved via
    `web_search_preview`; highlight agreements, discrepancies, and plausible
    ecological mechanisms.
-6. **Conclusion** – wrap‑up of insights and recommendations for future work.
+6. **Conclusion** - wrap-up of insights and recommendations for future work.
 
-*Write in formal academic style, using citations like* “(Smith 2024)”.
+*Write in formal academic style, using citations like* “(Smith 2024)”.
 
 If web search yields no directly relevant article, proceed without citation.
 """
