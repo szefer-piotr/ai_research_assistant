@@ -231,8 +231,8 @@ Respond to the user prompt and refine parts of the provided analysis execution.
 
 
 STAGE_INFO = {
-    "upload": "#### Stage I - Upload Files\n\n **Upload a CSV dataset and a TXT file containing your initial hypotheses.**\n\nOnce both are uploaded, the app automatically advances.\n\nFiles are held in `st.session_state`; the CSV preview is displayed with `st.dataframe()` so you can verify the data.",
-    "processing":"### Stage II - Processing Files\n\n Great! You have your files uploaded.\n\nNow the app summarizes your dataset and rewrites each raw hypothesis into a clear, testable statement.\n\nYou’ll review them next.\n\nA GPT‑4o Data Summarizer assistant analyzes the CSV, then another GPT‑4o call refines the hypotheses using that summary; results are cached for later stages.",
+    "upload": "#### Stage I: Upload Files\n\n **Upload a CSV dataset and a TXT file containing your initial hypotheses.**\n\nOnce both are uploaded, the app automatically advances.\n\nFiles are held in `st.session_state`; the CSV preview is displayed with `st.dataframe()` so you can verify the data.",
+    "processing":"### Stage II: Processing Files\n\n Great! You have your files uploaded.\n\nNow the app summarizes your dataset and rewrites each raw hypothesis into a clear, testable statement.\n\nYou’ll review them next.\n\nA GPT‑4o Data Summarizer assistant analyzes the CSV, then another GPT‑4o call refines the hypotheses using that summary; results are cached for later stages.",
     "hypotheses_manager": {
         "title": "3 · Hypotheses Manager",
         "description": (
@@ -1188,6 +1188,7 @@ def plan_execution(client: OpenAI):
                 assistant_items.append({"type": tp, "content": "" if tp != "image" else []})
 
         if run_analysis:
+            # Runs the initial analysis with specific instructions.
             stream = client.beta.threads.runs.create(
                 thread_id    = st.session_state.thread_id,
                 assistant_id = analysis_assistant.id,
@@ -1197,7 +1198,7 @@ def plan_execution(client: OpenAI):
             )
 
         elif user_prompt:
-            # 
+            # Responds to user, focuses on refining parts of the plan.
             hypo_obj["plan_execution_chat_history"].append(
                 {"role": "user", "content": user_prompt}
             )
@@ -1289,7 +1290,7 @@ if (
 ):
     if st.sidebar.button("➡️ Generate final report"):
         st.session_state.app_state = "report_generation"
-        st.experimental_rerun()
+        st.rerun()
 
 
 
@@ -1372,30 +1373,128 @@ if "report_assistant_id" not in st.session_state:
 
 # Assistants cannot search web, I need to build a function that performs a search.
 
-# plan_generation_response_schema
+import base64
+from pathlib import Path
+from typing import List
 
-def build_report_prompt() -> str:
-    """Gather hypotheses, results, and data summary into a single prompt."""
-    prompt_parts: list[str] = [
+def _markdown_for_image_item(image_item: list[str]) -> str:
+    """
+    Convert an image item (list of HTML <img ...> strings) to Markdown
+    so it survives the trip through an LLM prompt.
+
+    If your images are already hosted somewhere public, simply return
+    them as Markdown image tags:
+
+        ![caption](https://…/chart123.png)
+
+    If they are local blobs, we inline them as base64‑encoded data URIs.
+    Most modern multimodal models understand this, but double‑check your
+    provider’s docs.
+    """
+    md_blocks: List[str] = []
+
+    for html in image_item:
+        # crude parse to extract the src attribute
+        src_start = html.find("src=\"") + 5
+        src_end   = html.find("\"", src_start)
+        src = html[src_start:src_end]
+
+        if src.startswith("data:image"):   # already a data‑URI
+            md_blocks.append(f"![inline image]({src})")
+        elif src.startswith("http"):
+            md_blocks.append(f"![linked image]({src})")
+        else:
+            # treat as local file‑path -> inline it
+            img_bytes = Path(src).read_bytes()
+            b64 = base64.b64encode(img_bytes).decode()
+            mime = "png" if src.lower().endswith(".png") else "jpeg"
+            md_blocks.append(f"![inline image](data:image/{mime};base64,{b64})")
+
+    return "\n".join(md_blocks)
+
+import tiktoken
+from collections import deque
+from typing import List
+
+ENC = tiktoken.encoding_for_model("gpt-4o-mini")
+TOKEN_LIMIT = 6000           # leave room for the model’s answer
+
+def n_tokens(s: str) -> int:
+    return len(ENC.encode(s))
+
+def prune_blocks(blocks: List[str], max_tokens: int) -> List[str]:
+    """
+    Keep blocks newest‑first until we run out of budget.
+    Earlier blocks get truncated to an auto‑summary placeholder.
+    """
+    kept = deque()
+    used = 0
+
+    # iterate newest → oldest so we keep the most recent detail
+    for block in reversed(blocks):
+        t = n_tokens(block)
+        if used + t <= max_tokens:
+            kept.appendleft(block)
+            used += t
+        else:
+            kept.appendleft(f"*⤵️ Older content summarised ({t} tokens dropped).*")
+    return list(kept)
+
+
+def _extract_src(html: str) -> str:
+    start = html.find('src="') + 5
+    end   = html.find('"', start)
+    return html[start:end]
+
+
+def build_full_report_prompt() -> str:
+    prompt_parts = [
         f"# Data summary\n{st.session_state.data_summary}\n",
-        "# Hypotheses and Results",
+        "# Hypotheses, Execution Logs, and Results"
     ]
+    running_tokens = n_tokens("".join(prompt_parts))
 
-    for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"], 1):
-        # Collect only *text* chunks from the execution phase
-        result_text_blocks: list[str] = []
-        for msg in hyp.get("plan_execution_chat_history", []):
-            if msg.get("role") == "assistant":
-                for itm in msg.get("items", []):
-                    if itm["type"] == "text":
-                        result_text_blocks.append(itm["content"])
-        results_combined = "\n".join(result_text_blocks).strip() or "(no textual results captured)"
+    for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"], 1):
+        # ❶ collect raw blocks
+        hist_blocks = []
+        for msg in hyp["plan_execution_chat_history"]:
+            role = msg["role"]
+            if role == "assistant":
+                for itm in msg["items"]:
+                    typ = itm["type"]
+                    if typ == "text":
+                        hist_blocks.append(itm["content"])
+                    elif typ == "code_input":
+                        hist_blocks.append(f"```python\n{itm['content']}\n```")
+                    elif typ == "code_output":
+                        hist_blocks.append(f"```\n{itm['content']}\n```")
+                    elif typ == "image":
+                        # link instead of embed
+                        linked = "\n".join(
+                            f"![{idx}]({_extract_src(html)})" for html in itm["content"]
+)
+                        hist_blocks.append(linked)
+            else:
+                hist_blocks.append(f"**User:** {msg['content']}")
 
+        # ❷ prune against remaining budget
+        budget_left = TOKEN_LIMIT - running_tokens - 200  # reserve a safety buffer
+        hist_blocks = prune_blocks(hist_blocks, budget_left)
+        running_tokens += n_tokens("".join(hist_blocks))
+
+        # ❸ append to prompt
         prompt_parts.append(
             f"## Hypothesis {idx}\n"
             f"**Statement:** {hyp['final_hypothesis']}\n\n"
-            f"**Results transcript:**\n{results_combined}\n"
+            f"**Execution transcript:**\n" +
+            "\n\n".join(hist_blocks)
         )
+
+        if running_tokens >= TOKEN_LIMIT:
+            prompt_parts.append(
+                "\n*⛔ Further hypotheses skipped — context limit reached.*"
+            )
+            break
 
     return "\n".join(prompt_parts)
 
@@ -1411,7 +1510,7 @@ def report_generation(client: OpenAI):
     # Sidebar – quick outline of accepted hypotheses
     with st.sidebar:
         st.header("Refined Initial Hypotheses")
-        for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"], 1):
+        for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"], 1):
             st.markdown(f"**H{idx}.** {hyp['title']}")
 
     # Button to trigger report generation
@@ -1420,7 +1519,9 @@ def report_generation(client: OpenAI):
         st.session_state.report_markdown = ""
 
     if st.button("📝 Generate full report", disabled=st.session_state.report_generated):
-        full_prompt = build_report_prompt()
+        full_prompt = build_full_report_prompt()
+
+        print(f"\n\nFULL PROMPT\n\n{full_prompt}")
 
         with st.spinner("Synthesising report – this may take a minute …"):
             resp = client.responses.create(
@@ -1429,7 +1530,6 @@ def report_generation(client: OpenAI):
                 input=[{"role": "user", "content": full_prompt}],
                 tools=[{"type": "web_search_preview"}],
                 stream=False,
-                text={"format": {"type": "markdown"}},
                 store=False,
             )
 
