@@ -212,7 +212,21 @@ You are an expert in ecological research and statistical analysis in Python.
 """
 
 step_execution_instructions = """
+## Role
+- You are an expert in ecological research and statistical analysis**, with proficiency in **Python**.
+- You must apply the **highest quality statistical methods and approaches** in data analysis.
+- Your suggestions should be based on **best practices in ecological data analysis**.
+- Always try to **provide guidance, suggestions, and recommendations** within your area of expertise.
+- Students will seek your assistance with **implementing steps of data analysis plan, interpretation, and statistical methods**.
+- Since students have **limited statistical knowledge**, your responses should be **simple and precise**.
+- Students also have **limited programming experience**, so provide **clear and detailed step by step implementations**
+
+## Task
 Execute in code every step of the analysis plan.
+"""
+
+step_execution_chat_instructions = """
+Respond to the user prompt and refine parts of the provided analysis execution.
 """
 
 
@@ -613,7 +627,6 @@ def stream_data_summary(client: OpenAI):
 
 
 # SIDEBAR – STAGE 1 UPLOADS
-st.title("🔬 Hypotheses Workflow")
 
 if st.session_state.app_state in {"upload", "processing"}:
 
@@ -707,7 +720,7 @@ if st.session_state.app_state == "processing":
         stream_data_summary(client)
 
         st.session_state.processing_done = True
-        st.success("Processing complete!", icon="✅")
+        
         with st.expander("📊 Data summary", expanded=False):
             st.json(st.session_state.data_summary)
 
@@ -912,7 +925,7 @@ def plan_manager(client: OpenAI):
         st.session_state.updated_hypotheses["assistant_response"][current]
     )
 
-    st.subheader(f"Analysis Plan Manager - Hypothesis {current+1}")
+    st.subheader(f"Analysis Plan Manager: Hypothesis {current+1}")
     st.markdown(hypo_obj["final_hypothesis"], unsafe_allow_html=True)
 
     # Plan generation / chat
@@ -1108,10 +1121,8 @@ def plan_execution(client: OpenAI):
     hypo_obj = ensure_execution_keys(
         st.session_state.updated_hypotheses["assistant_response"][current])
 
-    # ------------------------------------------------------------------
-    # Parse analysis plan robustly
-    # ------------------------------------------------------------------
     plan_dict = safe_load_plan(hypo_obj["analysis_plan"])
+
     if not plan_dict:
         st.error("❌ Could not parse analysis plan JSON. Please regenerate the plan in the previous stage or ask the assistant to output valid JSON.")
         return
@@ -1125,13 +1136,6 @@ def plan_execution(client: OpenAI):
     if isinstance(hypo_obj["analysis_plan"], str):
         hypo_obj["analysis_plan"] = plan_dict
 
-    # ------------------------------------------------------------------
-    # Main canvas – plan outline + chat / execution UI
-    # ------------------------------------------------------------------
-    # st.subheader(f"Hypothesis {current+1}: {plan_title}")
-    # st.markdown("### Plan steps")
-    # for num, s in enumerate(plan_steps, start=1):
-    #     st.markdown(f"{num}. {s['step']}")
 
     # Previous transcript ------------------------------------------------
     for msg in hypo_obj["plan_execution_chat_history"]:
@@ -1163,8 +1167,6 @@ def plan_execution(client: OpenAI):
 
     if run_analysis or user_prompt:
         # Choose assistant instructions
-        instructions = user_prompt if user_prompt else step_execution_instructions
-
         client.beta.threads.messages.create(
             thread_id=st.session_state.thread_id,
             role="user",
@@ -1189,11 +1191,13 @@ def plan_execution(client: OpenAI):
             stream = client.beta.threads.runs.create(
                 thread_id    = st.session_state.thread_id,
                 assistant_id = analysis_assistant.id,
-                instructions = instructions,
+                instructions = step_execution_instructions,
                 tool_choice  = {"type": "code_interpreter"},
                 stream       = True,
             )
+
         elif user_prompt:
+            # 
             hypo_obj["plan_execution_chat_history"].append(
                 {"role": "user", "content": user_prompt}
             )
@@ -1207,10 +1211,12 @@ def plan_execution(client: OpenAI):
             stream = client.beta.threads.runs.create(
                 thread_id    = st.session_state.thread_id,
                 assistant_id = analysis_chat_assistant.id,
-                instructions = instructions,
+                instructions = step_execution_chat_instructions,
                 tool_choice  = {"type": "code_interpreter"},
                 stream       = True,
             )
+
+
 
         for event in stream:
             if isinstance(event, ThreadRunStepCreated):
@@ -1275,6 +1281,15 @@ if st.session_state.app_state == "plan_execution":
     plan_execution(client)
 
 
+if (
+    st.session_state.app_state == "plan_execution"
+    and all(
+        h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["assistant_response"]
+    )
+):
+    if st.sidebar.button("➡️ Generate final report"):
+        st.session_state.app_state = "report_generation"
+        st.experimental_rerun()
 
 
 
@@ -1307,35 +1322,7 @@ if st.session_state.app_state == "plan_execution":
 
 
 
-
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# STAGE‑4  ▸  REPORT GENERATION
-# ────────────────────────────────────────────────────────────────────────────────
-# """This module adds the final stage to the Streamlit workflow.  
-# It **interprets analysis results**, consults current literature via the
-# `web_search_preview` tool, and produces a publish‑ready scientific report
-# containing a concise methodology section and a discussion of the findings in
-# the context of contemporary ecological research.
-
-# #### How it works
-# 1.  **Collects** each accepted hypothesis and its execution transcript.
-# 2.  **Extracts** the assistant‑generated narrative (only the *text* items) from
-#     the execution history as the raw *results* for that hypothesis.
-# 3.  **Calls** a dedicated *Report Generation Assistant* that:
-#     • interprets the statistical results;  
-#     • queries the web for the latest peer‑reviewed work;  
-#     • writes an integrated report in Markdown.
-# 4.  Displays the report inline **and** offers a one‑click Markdown download.
-
-# Add this module _after_ the existing `plan_execution` router and before the
-# main app router.
-# """
-
-# ────────────────────────────────────────────────────────────────────────────────
-# 🔧  Assistant definition & system instructions
-# ────────────────────────────────────────────────────────────────────────────────
+# STAGE 4. REPORT GENERATION
 
 report_generation_instructions = """
 You are an expert ecological scientist and statistician.
@@ -1363,20 +1350,29 @@ Your task is to craft a peer‑reviewed‑quality report based on:
 If web search yields no directly relevant article, proceed without citation.
 """
 
-# # Create the assistant **once** and cache the ID in session_state
-# if "report_assistant_id" not in st.session_state:
-#     report_asst = client.beta.assistants.create(
-#         name="Report Generation Assistant",
-#         model="gpt-4o",
-#         temperature=0,
-#         instructions=report_generation_instructions,
-#         tools=[{"type": "web_search_preview"}],
-#     )
-#     st.session_state.report_assistant_id = report_asst.id
+# Create the assistant **once** and cache the ID in session_state
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 🖼️  Helper – build the consolidated prompt sent to the assistant
-# ────────────────────────────────────────────────────────────────────────────────
+
+# 1. Let the whole code generation take place in during the execution stage.
+# 2. In the final report generation step I need 
+# - the final execution (accepted): images, code, text, tables from the stream.
+# - 
+
+
+if "report_assistant_id" not in st.session_state:
+    report_asst = client.beta.assistants.create(
+        name="Report Generation Assistant",
+        model="gpt-4o",
+        temperature=0,
+        instructions=report_generation_instructions,
+        tools=[{"type": "code_interpreter"}],
+    )
+    
+    st.session_state.report_assistant_id = report_asst.id
+
+# Assistants cannot search web, I need to build a function that performs a search.
+
+# plan_generation_response_schema
 
 def build_report_prompt() -> str:
     """Gather hypotheses, results, and data summary into a single prompt."""
@@ -1403,21 +1399,18 @@ def build_report_prompt() -> str:
 
     return "\n".join(prompt_parts)
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 📑  Stage function: report_generation
-# ────────────────────────────────────────────────────────────────────────────────
 
 def report_generation(client: OpenAI):
-    """Render the Report Generation stage and orchestrate the assistant call."""
+    """Render the Report Generation stage and orchestrate the response call."""
 
     if st.session_state.app_state != "report_generation":
         return
 
-    st.title("📄 Scientific Report Builder")
+    st.title("📄 Report Builder")
 
     # Sidebar – quick outline of accepted hypotheses
     with st.sidebar:
-        st.header("Refined hypotheses")
+        st.header("Refined Initial Hypotheses")
         for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"], 1):
             st.markdown(f"**H{idx}.** {hyp['title']}")
 
@@ -1460,25 +1453,6 @@ def report_generation(client: OpenAI):
             st.session_state.clear()
             st.experimental_rerun()
 
-# ────────────────────────────────────────────────────────────────────────────────
-# 🔌  Integrate into the main router after `plan_execution`
-# ────────────────────────────────────────────────────────────────────────────────
 
-# Example insertion (add to the bottom of your main script):
-#
 if st.session_state.app_state == "report_generation":
     report_generation(client)
-
-# Transition logic – once *all* hypotheses have at least one assistant
-# message inside `plan_execution_chat_history`, enable report stage.
-# print(f"\n\nUPDATED HYPS:\n\n{st.session_state.updated_hypotheses['assistant_response']}")
-
-if (
-    st.session_state.app_state == "plan_execution"
-    and all(
-        h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["assistant_response"]
-    )
-):
-    if st.sidebar.button("➡️ Generate final report"):
-        st.session_state.app_state = "report_generation"
-        st.experimental_rerun()
