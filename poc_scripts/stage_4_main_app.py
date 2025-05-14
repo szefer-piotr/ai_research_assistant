@@ -418,6 +418,10 @@ if "files" not in st.session_state:
     st.session_state.files = {}
 if "file_ids" not in st.session_state:
     st.session_state.file_ids = []
+
+if "images" not in st.session_state:
+    st.session_state.images = []
+
 if "data_summary" not in st.session_state:
     st.session_state.data_summary = ""
 if "hypotheses" not in st.session_state:
@@ -954,7 +958,7 @@ def plan_manager(client: OpenAI):
                     store=False,
                 )
 
-            print(f"\n\nResponse from the plan generation response:\n\n{resp}")
+            # print(f"\n\nResponse from the plan generation response:\n\n{resp}")
 
             chat_hist.append({"role": "assistant", "content": resp.output_text})
 
@@ -965,8 +969,13 @@ def plan_manager(client: OpenAI):
         # Show existing chat
         for m in chat_hist[1:]:
             with st.chat_message(m["role"]):
-                message = json.loads(m["content"])
-                st.markdown(message["assistant_response"], unsafe_allow_html=True)
+                if m["role"] == "assistant":
+                    st.markdown(
+                        json.loads(m["content"])["assistant_response"], 
+                        unsafe_allow_html=True
+                    )
+                elif m["role"] == "user":
+                    st.write(m["content"])
 
         user_msg = st.chat_input("Refine this analysis plan …")
 
@@ -1127,7 +1136,7 @@ def plan_execution(client: OpenAI):
         st.error("❌ Could not parse analysis plan JSON. Please regenerate the plan in the previous stage or ask the assistant to output valid JSON.")
         return
     
-    print(f"\n\nPLAN DICT\n\n:{plan_dict}")
+    # print(f"\n\nPLAN DICT\n\n:{plan_dict}")
 
     st.markdown(plan_dict['assistant_response'])
     st.markdown(plan_dict['current_plan_execution'])
@@ -1252,6 +1261,13 @@ def plan_execution(client: OpenAI):
                         data = client.files.content(fid).read()
                         img_path = IMG_DIR / f"{fid}.png"
                         img_path.write_bytes(data)
+
+
+                        # After saving the image data, add it to the thread
+                        st.session_state.images.append({"image_path": img_path, "file_id": fid})
+
+                        print(f"Image: {out.image.file_id} at {IMG_DIR / f'{fid}.png'} added to the thread {st.session_state.thread_id}.")
+
                         b64 = base64.b64encode(data).decode()
                         html = (
                             f'<p align="center"><img src="data:image/png;base64,{b64}" '
@@ -1271,6 +1287,19 @@ def plan_execution(client: OpenAI):
                     assistant_items[-1]["content"] += blk.text.value
                     text_pl.markdown(assistant_items[-1]["content"], unsafe_allow_html=True)
 
+        # After the run ends add the images to the thread
+        for img in st.session_state["images"]:
+            file = client.files.create(
+                            file=open(img["image_path"], "rb"),
+                            purpose="vision"
+                        )
+
+            client.beta.threads.messages.create(
+                thread_id=st.session_state.thread_id,
+                role="user",
+                content=[{"type": "image_file","image_file": {"file_id": file.id}}]
+            )
+
         hypo_obj["plan_execution_chat_history"].append(
             {"role": "assistant", "items": assistant_items}
         )
@@ -1280,17 +1309,21 @@ def plan_execution(client: OpenAI):
 
 if st.session_state.app_state == "plan_execution":
     plan_execution(client)
-
-
-if (
-    st.session_state.app_state == "plan_execution"
-    and all(
-        h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["assistant_response"]
-    )
-):
+    # print(f"\n\nTHE ASSISTANT RESPONSE AFTER CODE EXECUTION:\n\n{st.session_state.updated_hypotheses['assistant_response'][0]['plan_execution_chat_history']}")
     if st.sidebar.button("➡️ Generate final report"):
         st.session_state.app_state = "report_generation"
         st.rerun()
+
+
+# if (
+#     st.session_state.app_state == "plan_execution"
+#     and all(
+#         h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["assistant_response"]
+#     )
+# ):
+#     if st.sidebar.button("➡️ Generate final report"):
+#         st.session_state.app_state = "report_generation"
+#         st.rerun()
 
 
 
@@ -1371,132 +1404,15 @@ if "report_assistant_id" not in st.session_state:
     
     st.session_state.report_assistant_id = report_asst.id
 
-# Assistants cannot search web, I need to build a function that performs a search.
 
-import base64
-from pathlib import Path
-from typing import List
+def build_report_prompt():
+    report_prompt = []
+    for idx, hyp in enumerate(st.session_state.updated_hypotheses['assistant_response']):
+        for msg in hyp[idx]['plan_execution_chat_history']:
+            if msg["type"] != "image":
+                report_prompt.append(msg["content"])
+    return " ".join(report_prompt)
 
-def _markdown_for_image_item(image_item: list[str]) -> str:
-    """
-    Convert an image item (list of HTML <img ...> strings) to Markdown
-    so it survives the trip through an LLM prompt.
-
-    If your images are already hosted somewhere public, simply return
-    them as Markdown image tags:
-
-        ![caption](https://…/chart123.png)
-
-    If they are local blobs, we inline them as base64‑encoded data URIs.
-    Most modern multimodal models understand this, but double‑check your
-    provider’s docs.
-    """
-    md_blocks: List[str] = []
-
-    for html in image_item:
-        # crude parse to extract the src attribute
-        src_start = html.find("src=\"") + 5
-        src_end   = html.find("\"", src_start)
-        src = html[src_start:src_end]
-
-        if src.startswith("data:image"):   # already a data‑URI
-            md_blocks.append(f"![inline image]({src})")
-        elif src.startswith("http"):
-            md_blocks.append(f"![linked image]({src})")
-        else:
-            # treat as local file‑path -> inline it
-            img_bytes = Path(src).read_bytes()
-            b64 = base64.b64encode(img_bytes).decode()
-            mime = "png" if src.lower().endswith(".png") else "jpeg"
-            md_blocks.append(f"![inline image](data:image/{mime};base64,{b64})")
-
-    return "\n".join(md_blocks)
-
-import tiktoken
-from collections import deque
-from typing import List
-
-ENC = tiktoken.encoding_for_model("gpt-4o-mini")
-TOKEN_LIMIT = 6000           # leave room for the model’s answer
-
-def n_tokens(s: str) -> int:
-    return len(ENC.encode(s))
-
-def prune_blocks(blocks: List[str], max_tokens: int) -> List[str]:
-    """
-    Keep blocks newest‑first until we run out of budget.
-    Earlier blocks get truncated to an auto‑summary placeholder.
-    """
-    kept = deque()
-    used = 0
-
-    # iterate newest → oldest so we keep the most recent detail
-    for block in reversed(blocks):
-        t = n_tokens(block)
-        if used + t <= max_tokens:
-            kept.appendleft(block)
-            used += t
-        else:
-            kept.appendleft(f"*⤵️ Older content summarised ({t} tokens dropped).*")
-    return list(kept)
-
-
-def _extract_src(html: str) -> str:
-    start = html.find('src="') + 5
-    end   = html.find('"', start)
-    return html[start:end]
-
-
-def build_full_report_prompt() -> str:
-    prompt_parts = [
-        f"# Data summary\n{st.session_state.data_summary}\n",
-        "# Hypotheses, Execution Logs, and Results"
-    ]
-    running_tokens = n_tokens("".join(prompt_parts))
-
-    for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"], 1):
-        # ❶ collect raw blocks
-        hist_blocks = []
-        for msg in hyp["plan_execution_chat_history"]:
-            role = msg["role"]
-            if role == "assistant":
-                for itm in msg["items"]:
-                    typ = itm["type"]
-                    if typ == "text":
-                        hist_blocks.append(itm["content"])
-                    elif typ == "code_input":
-                        hist_blocks.append(f"```python\n{itm['content']}\n```")
-                    elif typ == "code_output":
-                        hist_blocks.append(f"```\n{itm['content']}\n```")
-                    elif typ == "image":
-                        # link instead of embed
-                        linked = "\n".join(
-                            f"![{idx}]({_extract_src(html)})" for html in itm["content"]
-)
-                        hist_blocks.append(linked)
-            else:
-                hist_blocks.append(f"**User:** {msg['content']}")
-
-        # ❷ prune against remaining budget
-        budget_left = TOKEN_LIMIT - running_tokens - 200  # reserve a safety buffer
-        hist_blocks = prune_blocks(hist_blocks, budget_left)
-        running_tokens += n_tokens("".join(hist_blocks))
-
-        # ❸ append to prompt
-        prompt_parts.append(
-            f"## Hypothesis {idx}\n"
-            f"**Statement:** {hyp['final_hypothesis']}\n\n"
-            f"**Execution transcript:**\n" +
-            "\n\n".join(hist_blocks)
-        )
-
-        if running_tokens >= TOKEN_LIMIT:
-            prompt_parts.append(
-                "\n*⛔ Further hypotheses skipped — context limit reached.*"
-            )
-            break
-
-    return "\n".join(prompt_parts)
 
 
 def report_generation(client: OpenAI):
@@ -1511,7 +1427,7 @@ def report_generation(client: OpenAI):
     with st.sidebar:
         st.header("Refined Initial Hypotheses")
         for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"], 1):
-            st.markdown(f"**H{idx}.** {hyp['title']}")
+            st.markdown(f"**H{idx}.** {hyp}")
 
     # Button to trigger report generation
     if "report_generated" not in st.session_state:
@@ -1519,26 +1435,121 @@ def report_generation(client: OpenAI):
         st.session_state.report_markdown = ""
 
     if st.button("📝 Generate full report", disabled=st.session_state.report_generated):
-        full_prompt = build_full_report_prompt()
+        
+        # Build a report that contains text, code, images and tables (Can I generate tables?)
+        full_prompt = build_report_prompt()
 
         print(f"\n\nFULL PROMPT\n\n{full_prompt}")
 
         with st.spinner("Synthesising report – this may take a minute …"):
-            resp = client.responses.create(
-                model="gpt-4o",
-                instructions=report_generation_instructions,
-                input=[{"role": "user", "content": full_prompt}],
-                tools=[{"type": "web_search_preview"}],
-                stream=False,
-                store=False,
-            )
+            stream = client.beta.threads.runs.create(
+                thread_id=st.session_state.thread_id,
+                assistant_id=report_asst.id,
+                stream=True
+                )
+            
+        # Live placeholders
+        container      = st.container()
+        code_hdr_pl    = container.empty()
+        code_pl        = container.empty()
+        result_hdr_pl  = container.empty()
+        result_pl      = container.empty()
+        text_pl        = container.empty()
 
-        st.session_state.report_markdown = resp.output_text
+        assistant_items: List[Dict[str, Any]] = []
+
+        def ensure_slot(tp: str):
+            if not assistant_items or assistant_items[-1]["type"] != tp:
+                assistant_items.append({"type": tp, "content": "" if tp != "image" else []})
+
+        ## HANDLER
+        for event in stream:
+            if isinstance(event, ThreadRunStepCreated):
+                if getattr(event.data.step_details, "tool_calls", None):
+                    ensure_slot("code_input")
+                    code_hdr_pl.markdown("**Writing code ⏳ …**")
+
+            elif isinstance(event, ThreadRunStepDelta):
+                tc = getattr(event.data.delta.step_details, "tool_calls", None)
+                if tc and tc[0].code_interpreter:
+                    delta = tc[0].code_interpreter.input or ""
+                    if delta:
+                        ensure_slot("code_input")
+                        assistant_items[-1]["content"] += delta
+                        code_pl.code(assistant_items[-1]["content"], language="python")
+
+            elif isinstance(event, ThreadRunStepCompleted):
+                tc = getattr(event.data.step_details, "tool_calls", None)
+                if not tc:
+                    continue
+                outputs = tc[0].code_interpreter.outputs or []
+                if not outputs:
+                    continue
+                result_hdr_pl.markdown("#### Results")
+                for out in outputs:
+                    if isinstance(out, CodeInterpreterOutputLogs):
+                        ensure_slot("code_output")
+                        assistant_items[-1]["content"] += out.logs
+                        result_pl.code(out.logs)
+                    elif isinstance(out, CodeInterpreterOutputImage):
+                        fid  = out.image.file_id
+                        data = client.files.content(fid).read()
+                        img_path = IMG_DIR / f"{fid}.png"
+                        img_path.write_bytes(data)
+
+
+
+
+                        # After saving the image data, add it to the thread
+                        file = client.files.create(
+                            file=open(img_path, "rb"),
+                            purpose="vision"
+                        )
+
+                        print(f"Image: {out.image.file_id} at {IMG_DIR / f'{fid}.png'} added to the thread {st.session_state.thread_id}.")
+
+                        client.beta.threads.messages.create(
+                            thread_id=st.session_state.thread_id,
+                            role="user",
+                            content=[{"type": "image_file","image_file": {"file_id": file.id}}]
+                        )
+
+
+                        b64 = base64.b64encode(data).decode()
+                        html = (
+                            f'<p align="center"><img src="data:image/png;base64,{b64}" '
+                            f'width="600"></p>'
+                        )
+                        ensure_slot("image")
+                        assistant_items[-1]["content"].append(html)
+                        result_pl.markdown(html, unsafe_allow_html=True)
+
+            elif isinstance(event, ThreadMessageCreated):
+                ensure_slot("text")
+
+            elif isinstance(event, ThreadMessageDelta):
+                blk = event.data.delta.content[0]
+                if isinstance(blk, TextDeltaBlock):
+                    ensure_slot("text")
+                    assistant_items[-1]["content"] += blk.text.value
+                    text_pl.markdown(assistant_items[-1]["content"], unsafe_allow_html=True)
+
+        if "final_report" not in st.session_state:
+            st.session_state["final_report"] = []
+        
+        st.session_state["final_report"].append(assistant_items)
         st.session_state.report_generated = True
+
+        st.rerun()
+
+
+
+        ###
+
 
     # Display the generated report
     if st.session_state.report_generated:
-        st.markdown(st.session_state.report_markdown, unsafe_allow_html=True)
+        st.markdown(st.session_state.report_generated, unsafe_allow_html=True)
 
         # Offer download as Markdown
         st.download_button(
