@@ -1393,23 +1393,26 @@ If web search yields no directly relevant article, proceed without citation.
 # - 
 
 
-if "report_assistant_id" not in st.session_state:
-    report_asst = client.beta.assistants.create(
+report_asst = client.beta.assistants.create(
         name="Report Generation Assistant",
         model="gpt-4o",
         temperature=0,
         instructions=report_generation_instructions,
         tools=[{"type": "code_interpreter"}],
     )
-    
-    st.session_state.report_assistant_id = report_asst.id
 
 
 def build_report_prompt():
     report_prompt = []
     for idx, hyp in enumerate(st.session_state.updated_hypotheses['assistant_response']):
-        for msg in hyp[idx]['plan_execution_chat_history']:
-            if msg["type"] != "image":
+        for msg in hyp['plan_execution_chat_history']:
+            # print(f"\n\nThe message:\n\n {msg.keys()}")
+            if "items" in msg:
+                for item in msg["items"]:
+                    # Exclude outputs!!!
+                    if item["type"] != "image":
+                        report_prompt.append(item["content"])
+            elif "content" in msg:
                 report_prompt.append(msg["content"])
     return " ".join(report_prompt)
 
@@ -1427,7 +1430,7 @@ def report_generation(client: OpenAI):
     with st.sidebar:
         st.header("Refined Initial Hypotheses")
         for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"], 1):
-            st.markdown(f"**H{idx}.** {hyp}")
+            st.markdown(f"**H{idx}.** {hyp['title']}")
 
     # Button to trigger report generation
     if "report_generated" not in st.session_state:
