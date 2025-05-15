@@ -1315,46 +1315,6 @@ if st.session_state.app_state == "plan_execution":
         st.rerun()
 
 
-# if (
-#     st.session_state.app_state == "plan_execution"
-#     and all(
-#         h.get("plan_execution_chat_history") for h in st.session_state.updated_hypotheses["assistant_response"]
-#     )
-# ):
-#     if st.sidebar.button("➡️ Generate final report"):
-#         st.session_state.app_state = "report_generation"
-#         st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # STAGE 4. REPORT GENERATION
 
@@ -1366,32 +1326,22 @@ Your task is to craft a peer‑reviewed‑quality report based on:
 • Any additional context you can gather from current literature.
 
 **Report structure (Markdown):**
-1. **Title & Abstract** - concise overview of aims and main findings.
-2. **Introduction** - brief ecological background and rationale.
-3. **Methodology** - one paragraph describing data sources, key variables, and
+1. **Methodology** - one paragraph describing data sources, key variables, and
    statistical procedures actually executed (e.g., GLM, mixed-effects model,
    correlation analysis, etc.).  *Use past tense.*
-4. **Results** - interpret statistical outputs for **each hypothesis**,
+2. **Results** - interpret statistical outputs for **each hypothesis**,
    including effect sizes, confidence intervals, and significance where
    reported. Embed any relevant numeric values (means, p-values, etc.).
-5. **Discussion** - compare findings with recent studies retrieved via
+   Include relevant images and write captions for them.
+3. **Interpretations** - compare findings with recent studies retrieved via
    `web_search_preview`; highlight agreements, discrepancies, and plausible
    ecological mechanisms.
-6. **Conclusion** - wrap-up of insights and recommendations for future work.
+4  **Conclusion** - wrap-up of insights and recommendations for future work.
 
 *Write in formal academic style, using citations like* “(Smith 2024)”.
 
 If web search yields no directly relevant article, proceed without citation.
 """
-
-# Create the assistant **once** and cache the ID in session_state
-
-
-# 1. Let the whole code generation take place in during the execution stage.
-# 2. In the final report generation step I need 
-# - the final execution (accepted): images, code, text, tables from the stream.
-# - 
-
 
 report_asst = client.beta.assistants.create(
         name="Report Generation Assistant",
@@ -1410,7 +1360,7 @@ def build_report_prompt():
             if "items" in msg:
                 for item in msg["items"]:
                     # Exclude outputs!!!
-                    if item["type"] != "image":
+                    if item["type"] not in ("image", "code_output"):
                         report_prompt.append(item["content"])
             elif "content" in msg:
                 report_prompt.append(msg["content"])
@@ -1497,11 +1447,9 @@ def report_generation(client: OpenAI):
                     elif isinstance(out, CodeInterpreterOutputImage):
                         fid  = out.image.file_id
                         data = client.files.content(fid).read()
+                        
                         img_path = IMG_DIR / f"{fid}.png"
                         img_path.write_bytes(data)
-
-
-
 
                         # After saving the image data, add it to the thread
                         file = client.files.create(
@@ -1517,6 +1465,7 @@ def report_generation(client: OpenAI):
                             content=[{"type": "image_file","image_file": {"file_id": file.id}}]
                         )
 
+                        
 
                         b64 = base64.b64encode(data).decode()
                         html = (
@@ -1552,15 +1501,15 @@ def report_generation(client: OpenAI):
 
     # Display the generated report
     if st.session_state.report_generated:
-        st.markdown(st.session_state.report_generated, unsafe_allow_html=True)
+        st.markdown(st.session_state.final_report[0][0]['content'], unsafe_allow_html=True)
 
-        # Offer download as Markdown
-        st.download_button(
-            "⬇️ Download report (Markdown)",
-            st.session_state.report_markdown,
-            file_name="scientific_report.md",
-            mime="text/markdown",
-        )
+        # # Offer download as Markdown
+        # st.download_button(
+        #     "⬇️ Download report (Markdown)",
+        #     st.session_state.final_report,
+        #     file_name="scientific_report.md",
+        #     mime="text/markdown",
+        # )
 
         # Optionally, add a next‑steps button to reset or exit
         if st.button("🔄 Start new session"):
