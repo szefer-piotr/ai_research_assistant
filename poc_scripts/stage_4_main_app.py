@@ -670,20 +670,7 @@ if st.session_state.app_state in {"upload", "processing"}:
 
 
 
-
-
-
-
-
-
-
-
-
-
-# ────────────────────────────────────────────────────────────────────────────────
-# MAIN AREA – STAGE 2  (PROCESSING)
-# ────────────────────────────────────────────────────────────────────────────────
-
+# MAIN AREA STAGE 2  (PROCESSING)
 
 if st.session_state.app_state == "processing":
     
@@ -789,29 +776,10 @@ if st.session_state.app_state == "hypotheses_manager":
                     st.session_state.selected_hypothesis = idx
                     st.rerun()
 
-        # for idx, hyp in enumerate(st.session_state.updated_hypotheses["hypotheses"]):
-        #     with st.expander(hyp["title"], expanded=False):
-        #         # show either final hypothesis or rationale steps
-        #         if hyp["final_hypothesis"]:
-        #             st.markdown(f"> {hyp['final_hypothesis']}")
-        #         else:
-        #             for j, step in enumerate(hyp["steps"], start=1):
-        #                 st.markdown(f"{j}. {step['step']}")
-
-        #         if st.button("✏️ Edit", key=f"select_{idx}"):
-        #             st.session_state.selected_hypothesis = idx
-        #             st.rerun()
 
     # ── MAIN CANVAS: chat & accept button -------------------------------------
     sel_idx = st.session_state.selected_hypothesis
     sel_hyp = st.session_state.updated_hypotheses["assistant_response"][sel_idx]
-
-    # import pprint
-    # pprint.pprint(f"\n\nSELECTED HYPOTHESIS FROM THE UPDATED HYPOTHESES:\n\n{sel_hyp}")
-
-    # st.subheader(STAGE_INFO["hypotheses_manager"]["title"])
-    # st.write(STAGE_INFO["hypotheses_manager"]["description"])
-    # st.write(STAGE_INFO["hypotheses_manager"]["how_it_works"])
 
     st.subheader(f"🗣️ Discussion – {sel_hyp['title']}")
 
@@ -871,17 +839,6 @@ if st.session_state.app_state == "hypotheses_manager":
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 # STAGE 3 ANALYSIS PLAN MANAGER
 
 def pretty_markdown_plan(raw_json: str) -> str:
@@ -899,11 +856,14 @@ def pretty_markdown_plan(raw_json: str) -> str:
         # fall back to raw text if parsing fails
         return raw_json
 
+
+
 def ensure_plan_keys(h):
     h.setdefault("analysis_plan_chat_history", [])
     h.setdefault("analysis_plan", "")
     h.setdefault("analysis_plan_accepted", False)
     return h
+
 
 
 def plan_manager(client: OpenAI):
@@ -1027,32 +987,17 @@ if st.session_state.app_state == "plan_manager":
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 IMG_DIR = Path("images"); IMG_DIR.mkdir(exist_ok=True)
 JSON_RE  = re.compile(r"\{[\s\S]*?\}")
 STEP_RE  = re.compile(r"^(?:\d+\.\s+|[-*+]\s+)(.+)")
 
+
+
 def extract_json_fragment(text: str) -> Optional[str]:
     m = JSON_RE.search(text)
     return m.group(0) if m else None
+
+
 
 def _mk_fallback_plan(text: str) -> Dict[str, Any]:
     """Convert a loose Markdown plan → canonical dict."""
@@ -1066,6 +1011,8 @@ def _mk_fallback_plan(text: str) -> Dict[str, Any]:
     if not steps:  # fall back to one‑chunk step
         steps = [{"step": text.strip()}]
     return {"analyses": [{"title": title, "steps": steps}]}
+
+
 
 def safe_load_plan(raw: Any) -> Optional[Dict[str, Any]]:
     """Return plan dict from dict / JSON / python literal / markdown."""
@@ -1101,9 +1048,12 @@ def safe_load_plan(raw: Any) -> Optional[Dict[str, Any]]:
             return _mk_fallback_plan(txt)
     return None
 
+
+
 def ensure_execution_keys(h):
     h.setdefault("plan_execution_chat_history", [])
     return h
+
 
 
 def plan_execution(client: OpenAI):
@@ -1365,43 +1315,6 @@ def build_report_prompt():
             elif "content" in msg:
                 report_prompt.append(msg["content"])
     return " ".join(report_prompt)
-
-
-# def build_report_prompt():
-#     print("Saving the whole output to assistant_response.json...")
-#     with open("assistant_response.json", "w") as f:
-#         json.dump(st.session_state.updated_hypotheses['assistant_response'], f, indent=4)
-
-#     report_prompt = []
-
-#     for idx, hyp in enumerate(st.session_state.updated_hypotheses['assistant_response']):
-#         for msg in hyp['plan_execution_chat_history']:
-#             if "items" in msg:
-#                 for item in msg["items"]:
-#                     content = item["content"]
-#                     if isinstance(content, list):
-#                         report_prompt.extend(str(x) for x in content)
-#                     else:
-#                         report_prompt.append(str(content))
-#             if "content" in msg:
-#                 if isinstance(msg["content"], list):
-#                     report_prompt.extend(str(x) for x in msg["content"])
-#                 else:
-#                     report_prompt.append(str(msg["content"]))
-
-#     return " ".join(report_prompt)
-
-
-
-
-
-
-
-
-
-
-#-------------------------------------------------------------------------------------------
-
 
 
 
