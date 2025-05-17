@@ -232,12 +232,10 @@ Respond to the user prompt and refine parts of the provided analysis execution.
 
 report_generation_instructions = """
 You are an expert ecological scientist and statistician.
-Your task is to craft a peer‑reviewed‑quality report based on:
+Your task is to craft a report based on:
 - The refined hypotheses tested;
 - The statistical results produced in the previous stage;
 - Any additional context you can gather from current literature;
-- Images added to the thread
-
 
 ##Report structure (Markdown):
 1. Methodology - one paragraph describing data sources, key variables, and
@@ -247,8 +245,11 @@ Your task is to craft a peer‑reviewed‑quality report based on:
 2. Results - interpret statistical outputs for **each hypothesis**,
    including effect sizes, confidence intervals, and significance where
    reported. Embed any relevant numeric values (means, p-values, etc.).
-   In places where images should be use the `image_to_html` tool to convert image to html and to attach it to your response.
-    
+   In places where images should be simply provide a path to the image (for example: images/file-VcGLL7JbsetL5TWyHfehdV.png).
+   For models provide estimated parameters with p-values in tables with numerical results in html format.
+   Do not put images into tables.
+   Provide captions for every image and table.
+   Provide refernces to results in tables and images in the text.
 3. Interpretations - compare findings with recent studies retrieved via
    `web_search_preview`; highlight agreements, discrepancies, and plausible
    ecological mechanisms. Provide links and citations with DOI for scientific articles.
@@ -1302,6 +1303,8 @@ def plan_execution(client: OpenAI):
             {"role": "assistant", "items": assistant_items}
         )
 
+        
+
         st.rerun()
 
 
@@ -1315,60 +1318,48 @@ if st.session_state.app_state == "plan_execution":
 
 
 # STAGE 4. REPORT GENERATION
-
-from typing import Union
-
-def image_to_html(image_ref: Union[str, Path], img_dir: Path = None, width: int = 600) -> str:
+def replace_image_paths_with_html(text: str, img_dir: Path = None, width: int = 600) -> str:
     """
-    Convert an image (by file ID or full path) to base64 HTML img tag.
+    Find image paths in a string, read those images, convert them to base64 HTML, 
+    and replace the paths in the string with HTML <img> tags.
 
     Parameters:
-    - image_ref: file ID (str) or full path (str or Path) to the image
-    - img_dir: directory where images are stored (required if image_ref is a file ID)
-    - width: width of the displayed image in pixels
+    - text: The input string potentially containing image paths.
+    - img_dir: Optional base directory to resolve relative file names (used for file IDs).
+    - width: Width of the embedded image in pixels.
 
     Returns:
-    - str: HTML string with embedded base64 image
+    - Modified string with image paths replaced by embedded HTML <img> tags.
     """
-    # Determine image path
-    if isinstance(image_ref, str) and img_dir is not None:
-        image_path = img_dir / f"{image_ref}.png"
-    else:
-        image_path = Path(image_ref)
+    # Pattern to detect image paths (e.g., /some/path/image.png or just image_id if img_dir is given)
+    pattern = re.compile(r'[\w./\\-]+(?:\.png|\.jpg|\.jpeg|\.gif)', re.IGNORECASE)
 
-    if not image_path.exists():
-        raise FileNotFoundError(f"Image not found: {image_path}")
+    def convert_match_to_html(match):
+        path_str = match.group(0)
+        try:
+            # If img_dir is provided and path_str is not an absolute path, treat it as a file_id
+            image_path = Path(path_str)
+            if img_dir and not image_path.is_absolute():
+                image_path = img_dir / path_str
 
-    # Read and encode image
-    data = image_path.read_bytes()
-    b64 = base64.b64encode(data).decode()
+            if not image_path.exists():
+                return f"[Image not found: {image_path}]"
 
-    # Return HTML string
-    html = (
-        f'<p align="center"><img src="data:image/png;base64,{b64}" '
-        f'width="{width}"></p>'
-    )
-    return html
+            data = image_path.read_bytes()
+            b64 = base64.b64encode(data).decode()
+            return (
+                f'<p align="center"><img src="data:image/png;base64,{b64}" '
+                f'width="{width}"></p>'
+            )
+        except Exception as e:
+            return f"[Error loading image: {e}]"
+
+    # Replace each image path with its base64 HTML equivalent
+    return pattern.sub(convert_match_to_html, text)
 
 
-tools = [{
-    "type": "function",
-    "function": {
-        "name": "image_to_html",
-        "description": "Fetch image and convert to html to attach to the response.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "image_ref": {"type": "string", "description": "Image path string"}
-            },
-            "required": ["image_ref"],
-            "additionalProperties": False
-            },
-        "strict": True
-        }
-    },
-    {"type": "web_search_preview"}
-]
+
+tools = [{"type": "web_search_preview"}]
 
 def build_report_prompt():
     report_prompt = []
@@ -1422,7 +1413,7 @@ def report_generation(client: OpenAI):
                 model="gpt-4.1",
                 instructions=report_generation_instructions,
                 input=[{"role": "user", "content": full_prompt}],
-                tools=[{"type": "web_search_preview"}]
+                tools=tools
                 )
             
             print(response.output_text)
@@ -1434,7 +1425,9 @@ def report_generation(client: OpenAI):
 
     # Display the generated report
     if st.session_state.report_generated:
-        st.markdown(st.session_state.final_report[0], unsafe_allow_html=True)
+        report_text_with_images = replace_image_paths_with_html(st.session_state.final_report[0])
+        st.markdown(report_text_with_images, 
+            unsafe_allow_html=True)
 
         # Offer download as Markdown
         st.download_button(
@@ -1447,7 +1440,7 @@ def report_generation(client: OpenAI):
         # Optionally, add a next‑steps button to reset or exit
         if st.button("🔄 Start new session"):
             st.session_state.clear()
-            st.experimental_rerun()
+            st.rerun()
 
 
 if st.session_state.app_state == "report_generation":
