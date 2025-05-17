@@ -199,7 +199,8 @@ You are an expert in ecological research and statistical analysis in Python.
 ## Task
 - execute the analysis plan provided by the user STEP BY STEP. 
 - Write code in Python for each step to of the analysis plan from the beginning to the end.
-- execute code, write description and short summary forr all of the steps.
+- execute code and inerpret the results.
+- do not provide any reports just yet.
 """
 
 step_execution_chat_assistant_instructions = """
@@ -229,6 +230,34 @@ step_execution_chat_instructions = """
 Respond to the user prompt and refine parts of the provided analysis execution.
 """
 
+report_generation_instructions = """
+You are an expert ecological scientist and statistician.
+Your task is to craft a peer‑reviewed‑quality report based on:
+- The refined hypotheses tested;
+- The statistical results produced in the previous stage;
+- Any additional context you can gather from current literature;
+- Images added to the thread
+
+
+##Report structure (Markdown):
+1. Methodology - one paragraph describing data sources, key variables, and
+   statistical procedures actually executed (e.g., GLM, mixed-effects model,
+   correlation analysis, etc.) software used, and why they were used,
+   and to test which specific part of the hypothesis.  *Use past tense.*
+2. Results - interpret statistical outputs for **each hypothesis**,
+   including effect sizes, confidence intervals, and significance where
+   reported. Embed any relevant numeric values (means, p-values, etc.).
+   In places where images should be use the `image_to_html` tool to convert image to html and to attach it to your response.
+    
+3. Interpretations - compare findings with recent studies retrieved via
+   `web_search_preview`; highlight agreements, discrepancies, and plausible
+   ecological mechanisms. Provide links and citations with DOI for scientific articles.
+4  Conclusion - wrap-up of insights and recommendations for future work.
+
+##Instructions
+- *Write in formal academic style, using citations like* “(Smith 2024)”, and provite DOI for each one.
+- If web search yields no directly relevant article, proceed without citation.
+"""
 
 STAGE_INFO = {
     "upload": "#### Stage I: Upload Files\n\n **Upload a CSV dataset and a TXT file containing your initial hypotheses.**\n\nOnce both are uploaded, the app automatically advances.\n\nFiles are held in `st.session_state`; the CSV preview is displayed with `st.dataframe()` so you can verify the data.",
@@ -376,6 +405,15 @@ plan_generation_response_schema = {
 }
 
 # plan_generation_chat_response_schema = {"format": {"type": "text"}}
+
+
+report_asst = client.beta.assistants.create(
+        name="Report Generation Assistant",
+        model="gpt-4.1",
+        temperature=0,
+        instructions=report_generation_instructions,
+        tools=[{"type": "code_interpreter"}],
+    )
 
 
 # ASSISTANTS
@@ -1206,15 +1244,12 @@ def plan_execution(client: OpenAI):
                         ensure_slot("code_output")
                         assistant_items[-1]["content"] += out.logs
                         result_pl.code(out.logs)
+                    
                     elif isinstance(out, CodeInterpreterOutputImage):
                         fid  = out.image.file_id
                         data = client.files.content(fid).read()
                         img_path = IMG_DIR / f"{fid}.png"
                         img_path.write_bytes(data)
-
-
-                        # After saving the image data, add it to the thread
-                        st.session_state.images.append({"image_path": img_path, "file_id": fid})
 
                         print(f"Image: {out.image.file_id} at {IMG_DIR / f'{fid}.png'} added to the thread {st.session_state.thread_id}.")
 
@@ -1223,8 +1258,21 @@ def plan_execution(client: OpenAI):
                             f'<p align="center"><img src="data:image/png;base64,{b64}" '
                             f'width="600"></p>'
                         )
+
+                        # After saving the image data, add it to the thread
+                        st.session_state.images.append(
+                            {"image_path": img_path, 
+                             "file_id": fid, 
+                             "html": html}
+                            )
+
                         ensure_slot("image")
-                        assistant_items[-1]["content"].append(html)
+                        assistant_items[-1]["content"].append(html)                        
+                        assistant_items[-1]["file_id"] = fid
+                        assistant_items[-1]["image_path"] = str(img_path)
+
+                        print(f"\n\nASSISTANT ITEM [-1]:\n\n{assistant_items}")
+
                         result_pl.markdown(html, unsafe_allow_html=True)
 
             elif isinstance(event, ThreadMessageCreated):
@@ -1268,49 +1316,73 @@ if st.session_state.app_state == "plan_execution":
 
 # STAGE 4. REPORT GENERATION
 
-report_generation_instructions = """
-You are an expert ecological scientist and statistician.
-Your task is to craft a peer‑reviewed‑quality report based on:
-• The refined hypotheses tested;  
-• The statistical results produced in the previous stage;  
-• Any additional context you can gather from current literature.
+from typing import Union
 
-**Report structure (Markdown):**
-1. **Methodology** - one paragraph describing data sources, key variables, and
-   statistical procedures actually executed (e.g., GLM, mixed-effects model,
-   correlation analysis, etc.).  *Use past tense.*
-2. **Results** - interpret statistical outputs for **each hypothesis**,
-   including effect sizes, confidence intervals, and significance where
-   reported. Embed any relevant numeric values (means, p-values, etc.).
-   Include relevant images and write captions for them.
-3. **Interpretations** - compare findings with recent studies retrieved via
-   `web_search_preview`; highlight agreements, discrepancies, and plausible
-   ecological mechanisms.
-4  **Conclusion** - wrap-up of insights and recommendations for future work.
+def image_to_html(image_ref: Union[str, Path], img_dir: Path = None, width: int = 600) -> str:
+    """
+    Convert an image (by file ID or full path) to base64 HTML img tag.
 
-*Write in formal academic style, using citations like* “(Smith 2024)”, and provite DOI for each one.
+    Parameters:
+    - image_ref: file ID (str) or full path (str or Path) to the image
+    - img_dir: directory where images are stored (required if image_ref is a file ID)
+    - width: width of the displayed image in pixels
 
-If web search yields no directly relevant article, proceed without citation.
-"""
+    Returns:
+    - str: HTML string with embedded base64 image
+    """
+    # Determine image path
+    if isinstance(image_ref, str) and img_dir is not None:
+        image_path = img_dir / f"{image_ref}.png"
+    else:
+        image_path = Path(image_ref)
 
-report_asst = client.beta.assistants.create(
-        name="Report Generation Assistant",
-        model="gpt-4.1",
-        temperature=0,
-        instructions=report_generation_instructions,
-        tools=[{"type": "code_interpreter"}],
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+
+    # Read and encode image
+    data = image_path.read_bytes()
+    b64 = base64.b64encode(data).decode()
+
+    # Return HTML string
+    html = (
+        f'<p align="center"><img src="data:image/png;base64,{b64}" '
+        f'width="{width}"></p>'
     )
+    return html
 
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "image_to_html",
+        "description": "Fetch image and convert to html to attach to the response.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "image_ref": {"type": "string", "description": "Image path string"}
+            },
+            "required": ["image_ref"],
+            "additionalProperties": False
+            },
+        "strict": True
+        }
+    },
+    {"type": "web_search_preview"}
+]
 
 def build_report_prompt():
     report_prompt = []
     for idx, hyp in enumerate(st.session_state.updated_hypotheses['assistant_response']):
+        report_prompt.append(hyp["title"])
         for msg in hyp['plan_execution_chat_history']:
             # print(f"\n\nThe message:\n\n {msg.keys()}")
             if "items" in msg:
                 for item in msg["items"]:
                     # Exclude outputs!!!
-                    if item["type"] not in ("image", "code_output"):
+                    if item["type"] == "image":
+                        report_prompt.append(item["file_id"])
+                        report_prompt.append(str(item["image_path"]))
+                    else:
                         report_prompt.append(item["content"])
             elif "content" in msg:
                 report_prompt.append(msg["content"])
@@ -1346,12 +1418,6 @@ def report_generation(client: OpenAI):
                 st.session_state["final_report"] = []
 
         with st.spinner("Synthesising report – this may take a minute …"):
-            # stream = client.beta.threads.runs.create(
-            #     thread_id=st.session_state.thread_id,
-            #     assistant_id=report_asst.id,
-            #     stream=True
-            #     )
-
             response = client.responses.create(
                 model="gpt-4.1",
                 instructions=report_generation_instructions,
@@ -1368,12 +1434,12 @@ def report_generation(client: OpenAI):
 
     # Display the generated report
     if st.session_state.report_generated:
-        st.markdown(st.session_state.final_report[1], unsafe_allow_html=True)
+        st.markdown(st.session_state.final_report[0], unsafe_allow_html=True)
 
         # Offer download as Markdown
         st.download_button(
             "⬇️ Download report (Markdown)",
-            st.session_state.final_report[1],
+            st.session_state.final_report[0],
             file_name="scientific_report.md",
             mime="text/markdown",
         )
@@ -1382,160 +1448,6 @@ def report_generation(client: OpenAI):
         if st.button("🔄 Start new session"):
             st.session_state.clear()
             st.experimental_rerun()
-
-
-
-
-
-
-
-# def report_generation(client: OpenAI):
-#     """Render the Report Generation stage and orchestrate the response call."""
-
-#     if st.session_state.app_state != "report_generation":
-#         return
-
-#     st.title("📄 Report Builder")
-
-#     # Sidebar – quick outline of accepted hypotheses
-#     with st.sidebar:
-#         st.header("Refined Initial Hypotheses")
-#         for idx, hyp in enumerate(st.session_state.updated_hypotheses["assistant_response"], 1):
-#             st.markdown(f"**H{idx}.** {hyp['title']}")
-
-#     # Button to trigger report generation
-#     if "report_generated" not in st.session_state:
-#         st.session_state.report_generated = False
-#         st.session_state.report_markdown = ""
-
-#     if st.button("📝 Generate full report", disabled=st.session_state.report_generated):
-        
-#         # Build a report that contains text, code, images and tables (Can I generate tables?)
-#         full_prompt = build_report_prompt()
-
-#         print(f"\n\nFULL PROMPT\n\n{full_prompt}")
-
-#         with st.spinner("Synthesising report – this may take a minute …"):
-#             stream = client.beta.threads.runs.create(
-#                 thread_id=st.session_state.thread_id,
-#                 assistant_id=report_asst.id,
-#                 stream=True
-#                 )
-            
-#         # Live placeholders
-#         container      = st.container()
-#         code_hdr_pl    = container.empty()
-#         code_pl        = container.empty()
-#         result_hdr_pl  = container.empty()
-#         result_pl      = container.empty()
-#         text_pl        = container.empty()
-
-#         assistant_items: List[Dict[str, Any]] = []
-
-#         def ensure_slot(tp: str):
-#             if not assistant_items or assistant_items[-1]["type"] != tp:
-#                 assistant_items.append({"type": tp, "content": "" if tp != "image" else []})
-
-#         ## HANDLER
-#         for event in stream:
-#             if isinstance(event, ThreadRunStepCreated):
-#                 if getattr(event.data.step_details, "tool_calls", None):
-#                     ensure_slot("code_input")
-#                     code_hdr_pl.markdown("**Writing code ⏳ …**")
-
-#             elif isinstance(event, ThreadRunStepDelta):
-#                 tc = getattr(event.data.delta.step_details, "tool_calls", None)
-#                 if tc and tc[0].code_interpreter:
-#                     delta = tc[0].code_interpreter.input or ""
-#                     if delta:
-#                         ensure_slot("code_input")
-#                         assistant_items[-1]["content"] += delta
-#                         code_pl.code(assistant_items[-1]["content"], language="python")
-
-#             elif isinstance(event, ThreadRunStepCompleted):
-#                 tc = getattr(event.data.step_details, "tool_calls", None)
-#                 if not tc:
-#                     continue
-#                 outputs = tc[0].code_interpreter.outputs or []
-#                 if not outputs:
-#                     continue
-#                 result_hdr_pl.markdown("#### Results")
-#                 for out in outputs:
-#                     if isinstance(out, CodeInterpreterOutputLogs):
-#                         ensure_slot("code_output")
-#                         assistant_items[-1]["content"] += out.logs
-#                         result_pl.code(out.logs)
-#                     elif isinstance(out, CodeInterpreterOutputImage):
-#                         fid  = out.image.file_id
-#                         data = client.files.content(fid).read()
-                        
-#                         img_path = IMG_DIR / f"{fid}.png"
-#                         img_path.write_bytes(data)
-
-#                         # After saving the image data, add it to the thread
-#                         file = client.files.create(
-#                             file=open(img_path, "rb"),
-#                             purpose="vision"
-#                         )
-
-#                         print(f"Image: {out.image.file_id} at {IMG_DIR / f'{fid}.png'} added to the thread {st.session_state.thread_id}.")
-
-#                         client.beta.threads.messages.create(
-#                             thread_id=st.session_state.thread_id,
-#                             role="user",
-#                             content=[{"type": "image_file","image_file": {"file_id": file.id}}]
-#                         )
-
-                        
-
-#                         b64 = base64.b64encode(data).decode()
-#                         html = (
-#                             f'<p align="center"><img src="data:image/png;base64,{b64}" '
-#                             f'width="600"></p>'
-#                         )
-#                         ensure_slot("image")
-#                         assistant_items[-1]["content"].append(html)
-#                         result_pl.markdown(html, unsafe_allow_html=True)
-
-#             elif isinstance(event, ThreadMessageCreated):
-#                 ensure_slot("text")
-
-#             elif isinstance(event, ThreadMessageDelta):
-#                 blk = event.data.delta.content[0]
-#                 if isinstance(blk, TextDeltaBlock):
-#                     ensure_slot("text")
-#                     assistant_items[-1]["content"] += blk.text.value
-#                     text_pl.markdown(assistant_items[-1]["content"], unsafe_allow_html=True)
-
-#         if "final_report" not in st.session_state:
-#             st.session_state["final_report"] = []
-        
-#         st.session_state["final_report"].append(assistant_items)
-#         st.session_state.report_generated = True
-
-#         st.rerun()
-
-
-
-#         ###
-
-
-#     # Display the generated report
-#     if st.session_state.report_generated:
-#         st.markdown(st.session_state.final_report[0][0]['content'], unsafe_allow_html=True)
-
-#         # # Offer download as Markdown
-#         # st.download_button(
-#         #     "⬇️ Download report (Markdown)",
-#         #     st.session_state.final_report,
-#         #     file_name="scientific_report.md",
-#         #     mime="text/markdown",
-#         # )
-
-#         # Optionally, add a next‑steps button to reset or exit
-#         if st.button("🔄 Start new session"):
-#             st.session_state.clear()
-#             st.experimental_rerun()
 
 
 if st.session_state.app_state == "report_generation":
